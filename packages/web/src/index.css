@@ -1,1 +1,126 @@
 @import "tailwindcss";
+
+/* 深色主题基础样式 */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: #030712; /* gray-950 */
+  color: #f3f4f6; /* gray-100 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #374151; /* gray-700 */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4b5563; /* gray-600 */
+}
+
+/* 选中文本样式 */
+::selection {
+  background-color: #7c3aed; /* purple-600 */
+  color: #ffffff;
+}
+
+/* 焦点环样式 */
+*:focus-visible {
+  outline: 2px solid #a855f7; /* purple-500 */
+  outline-offset: 2px;
+}
+
+/* 输入框占位符样式 */
+input::placeholder,
+textarea::placeholder {
+  color: #6b7280; /* gray-500 */
+}
+
+/* 动画 */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes zoom-in-95 {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-in {
+  animation-duration: 200ms;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+
+.fade-in {
+  animation-name: fade-in;
+}
+
+.zoom-in-95 {
+  animation-name: zoom-in-95;
+}
+
+/* Prose 样式覆盖（用于 Markdown 渲染） */
+.prose {
+  color: inherit;
+}
+
+.prose-invert {
+  --tw-prose-body: #d1d5db; /* gray-300 */
+  --tw-prose-headings: #f3f4f6; /* gray-100 */
+  --tw-prose-links: #a855f7; /* purple-500 */
+  --tw-prose-bold: #f3f4f6; /* gray-100 */
+  --tw-prose-code: #e879f9; /* fuchsia-400 */
+  --tw-prose-pre-bg: #111827; /* gray-900 */
+}
+
+/* xterm.js 容器样式 */
+.xterm {
+  padding: 8px;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 8px;
+}
+
+.xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 4px;
+}
