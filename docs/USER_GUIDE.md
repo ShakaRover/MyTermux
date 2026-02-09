@@ -49,7 +49,11 @@ pnpm --filter @mycc/relay start
 在另一个终端中运行：
 
 ```bash
-pnpm --filter @mycc/daemon start -- start -f
+# 前台运行（推荐用于调试）
+pnpm --filter @mycc/daemon start -- -f
+
+# 或后台运行
+pnpm --filter @mycc/daemon start
 ```
 
 你会看到配对码：
@@ -79,6 +83,30 @@ pnpm --filter @mycc/web dev
 3. 配对成功后自动跳转到仪表盘
 
 ## 守护进程命令
+
+在项目根目录下，你可以使用 pnpm 命令来管理各模块。基本格式为：
+`pnpm --filter <package-name> <command> [-- <args>]`
+
+### 使用 pnpm 运行
+
+```bash
+# 前台启动（终端可见输出，适合调试）
+pnpm --filter @mycc/daemon start -- -f
+
+# 后台启动（作为守护进程运行）
+pnpm --filter @mycc/daemon start
+
+# 停止守护进程
+pnpm --filter @mycc/daemon stop
+
+# 查看运行状态
+pnpm --filter @mycc/daemon status
+
+# 重新生成配对码
+pnpm --filter @mycc/daemon pair
+```
+
+如果已将 daemon 全局安装，也可以使用 `mycc` 命令：
 
 ### 启动守护进程
 
@@ -124,6 +152,10 @@ PID: 12345
 ### 重新生成配对码
 
 ```bash
+# 使用 pnpm
+pnpm --filter @mycc/daemon pair
+
+# 或使用 mycc 命令
 mycc pair
 ```
 
