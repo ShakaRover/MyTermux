@@ -1,0 +1,34 @@
+{
+  "name": "mycc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "远程控制 Claude Code - 通过 Web 界面随时随地查看和控制本地电脑上的 Claude Code 和终端会话",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "remote-control",
+    "terminal",
+    "daemon"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.0"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

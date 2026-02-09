@@ -1,0 +1,27 @@
+{
+  "name": "@mycc/relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "node --watch dist/index.js",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@mycc/shared": "workspace:*",
+    "@hono/node-server": "^1.14.0",
+    "hono": "^4.7.4",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.14",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.0"
+  }
+}
