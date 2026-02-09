@@ -22,6 +22,8 @@ interface DeviceConnection {
   lastHeartbeat: number;
   /** 已配对的设备 ID（daemon 对应 client，client 对应 daemon） */
   pairedDeviceId?: string;
+  /** 设备公钥 */
+  publicKey?: string;
 }
 
 /** 配对信息 */
@@ -65,8 +67,14 @@ export class DeviceRegistry {
    * @param ws WebSocket 连接
    * @param deviceId 设备唯一标识
    * @param deviceType 设备类型
+   * @param publicKey 设备公钥（可选）
    */
-  registerDevice(ws: WebSocket, deviceId: string, deviceType: DeviceType): void {
+  registerDevice(
+    ws: WebSocket,
+    deviceId: string,
+    deviceType: DeviceType,
+    publicKey?: string
+  ): void {
     // 如果设备已存在，先断开旧连接
     const existing = this.devices.get(deviceId);
     if (existing) {
@@ -75,14 +83,27 @@ export class DeviceRegistry {
     }
 
     const now = Date.now();
-    this.devices.set(deviceId, {
+    const device: DeviceConnection = {
       ws,
       deviceType,
       connectedAt: now,
       lastHeartbeat: now,
-    });
+    };
+    if (publicKey !== undefined) {
+      device.publicKey = publicKey;
+    }
+    this.devices.set(deviceId, device);
 
     console.log(`[DeviceRegistry] 设备已注册: ${deviceId} (${deviceType})`);
+  }
+
+  /**
+   * 获取设备公钥
+   * @param deviceId 设备 ID
+   * @returns 公钥或 undefined
+   */
+  getPublicKey(deviceId: string): string | undefined {
+    return this.devices.get(deviceId)?.publicKey;
   }
 
   /**
@@ -144,6 +165,35 @@ export class DeviceRegistry {
     if (device) {
       device.lastHeartbeat = Date.now();
     }
+  }
+
+  /**
+   * 注册配对码（由 daemon 发起）
+   * @param daemonId daemon 设备 ID
+   * @param code 配对码
+   * @param expiresAt 过期时间戳
+   */
+  registerPairingCode(daemonId: string, code: string, expiresAt: number): void {
+    // 检查 daemon 是否已注册
+    const daemon = this.devices.get(daemonId);
+    if (!daemon || daemon.deviceType !== 'daemon') {
+      throw new Error('设备未注册或非 daemon 类型');
+    }
+
+    // 清理该 daemon 的旧配对码
+    for (const [existingCode, entry] of this.pairingCodes.entries()) {
+      if (entry.daemonId === daemonId) {
+        this.pairingCodes.delete(existingCode);
+      }
+    }
+
+    this.pairingCodes.set(code, {
+      daemonId,
+      createdAt: Date.now(),
+      expiresAt,
+    });
+
+    console.log(`[DeviceRegistry] 配对码已注册: ${code} (daemon: ${daemonId})`);
   }
 
   /**

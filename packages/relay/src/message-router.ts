@@ -131,6 +131,7 @@ export class MessageRouter {
    * @param to 接收者设备 ID
    * @param success 配对是否成功
    * @param daemonId 配对成功时的 daemon ID
+   * @param publicKey 配对成功时 daemon 的公钥
    * @param error 配对失败时的错误信息
    * @returns 路由结果
    */
@@ -138,14 +139,20 @@ export class MessageRouter {
     to: string,
     success: boolean,
     daemonId?: string,
+    publicKey?: string,
     error?: string
   ): RouteResult {
-    const payload = JSON.stringify({
-      success,
-      daemonId,
-      error,
-    });
-    return this.sendSystemMessage(to, 'pair_ack', payload);
+    const payload: Record<string, unknown> = { success };
+    if (daemonId !== undefined) {
+      payload['daemonId'] = daemonId;
+    }
+    if (publicKey !== undefined) {
+      payload['publicKey'] = publicKey;
+    }
+    if (error !== undefined) {
+      payload['error'] = error;
+    }
+    return this.sendSystemMessage(to, 'pair_ack', JSON.stringify(payload));
   }
 
   /**

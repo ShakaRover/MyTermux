@@ -19,12 +19,13 @@ import type {
 
 /** 传输层消息类型 */
 export type TransportMessageType =
-  | 'register'    // 设备注册
-  | 'pair'        // 配对请求
-  | 'pair_ack'    // 配对确认
-  | 'message'     // 加密消息
-  | 'heartbeat'   // 心跳
-  | 'error';      // 错误
+  | 'register'      // 设备注册
+  | 'pairing_code'  // 配对码注册（daemon → relay）
+  | 'pair'          // 配对请求
+  | 'pair_ack'      // 配对确认
+  | 'message'       // 加密消息
+  | 'heartbeat'     // 心跳
+  | 'error';        // 错误
 
 /** 传输层消息基础结构 */
 export interface TransportMessage {
@@ -225,7 +226,7 @@ export interface AppErrorMessage extends AppMessage {
 
 /** 有效的传输层消息类型 */
 const VALID_TRANSPORT_TYPES = new Set<string>([
-  'register', 'pair', 'pair_ack', 'message', 'heartbeat', 'error'
+  'register', 'pairing_code', 'pair', 'pair_ack', 'message', 'heartbeat', 'error'
 ]);
 
 /** 有效的应用层消息动作 */

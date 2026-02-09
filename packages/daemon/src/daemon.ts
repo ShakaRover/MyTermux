@@ -247,6 +247,8 @@ export class Daemon extends EventEmitter {
    */
   private setupPairingManagerListeners(): void {
     this.pairingManager.on('pairingCodeGenerated', (info) => {
+      // 向 Relay 注册配对码
+      this.registerPairingCodeWithRelay(info.code, info.expiresAt);
       this.emit('pairingCode', info.code, info.expiresAt);
     });
 
@@ -259,6 +261,20 @@ export class Daemon extends EventEmitter {
     });
   }
 
+  /**
+   * 向 Relay 注册配对码
+   */
+  private registerPairingCodeWithRelay(code: string, expiresAt: number): void {
+    if (!this.wsClient || !this.wsClient.isConnected) {
+      console.warn('WebSocket 未连接，无法注册配对码');
+      return;
+    }
+
+    const payload = JSON.stringify({ code, expiresAt });
+    this.wsClient.send('pairing_code', payload);
+    console.log(`已向 Relay 注册配对码: ${code}`);
+  }
+
   // --------------------------------------------------------------------------
   // 私有方法 - 消息处理
   // --------------------------------------------------------------------------
@@ -268,8 +284,17 @@ export class Daemon extends EventEmitter {
    */
   private async handleTransportMessage(message: TransportMessage): Promise<void> {
     switch (message.type) {
+      case 'register':
+        // 忽略注册确认消息
+        break;
+      case 'pairing_code':
+        // 忽略配对码注册确认消息
+        break;
       case 'pair':
         await this.handlePairMessage(message);
+        break;
+      case 'pair_ack':
+        await this.handlePairAckMessage(message);
         break;
       case 'message':
         await this.handleEncryptedMessage(message);
@@ -282,6 +307,40 @@ export class Daemon extends EventEmitter {
         break;
       default:
         console.warn(`未知消息类型: ${message.type}`);
+    }
+  }
+
+  /**
+   * 处理来自 Relay 的配对确认（Relay 已验证配对码成功）
+   */
+  private async handlePairAckMessage(message: TransportMessage): Promise<void> {
+    try {
+      const payload = JSON.parse(message.payload) as {
+        success: boolean;
+        clientId?: string;
+        publicKey?: string;
+        error?: string;
+      };
+
+      if (!payload.success) {
+        console.warn(`配对失败: ${payload.error ?? '未知错误'}`);
+        return;
+      }
+
+      if (!payload.clientId || !payload.publicKey) {
+        console.warn('配对确认消息缺少必要字段');
+        return;
+      }
+
+      // 完成本地配对
+      await this.pairingManager.completePairing(
+        payload.clientId,
+        payload.publicKey
+      );
+
+      console.log(`配对成功: ${payload.clientId}`);
+    } catch (error) {
+      this.emit('error', error instanceof Error ? error : new Error(String(error)));
     }
   }
 

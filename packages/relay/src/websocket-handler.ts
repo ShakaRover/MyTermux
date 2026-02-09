@@ -19,6 +19,12 @@ interface RegisterPayload {
   publicKey: string;
 }
 
+/** 配对码注册消息载荷 */
+interface PairingCodePayload {
+  code: string;
+  expiresAt: number;
+}
+
 /** 配对消息载荷 */
 interface PairPayload {
   code: string;
@@ -93,6 +99,9 @@ export class WebSocketHandler {
       case 'register':
         this.handleRegister(ws, message);
         break;
+      case 'pairing_code':
+        this.handlePairingCode(ws, message);
+        break;
       case 'pair':
         this.handlePair(ws, message);
         break;
@@ -138,8 +147,8 @@ export class WebSocketHandler {
       this.deviceRegistry.unregisterDevice(existingDeviceId);
     }
 
-    // 注册设备
-    this.deviceRegistry.registerDevice(ws, deviceId, payload.deviceType);
+    // 注册设备（包含公钥）
+    this.deviceRegistry.registerDevice(ws, deviceId, payload.deviceType, payload.publicKey);
     this.wsToDeviceId.set(ws, deviceId);
 
     // 发送注册成功确认
@@ -148,6 +157,54 @@ export class WebSocketHandler {
     ws.send(JSON.stringify(ack));
 
     console.log(`[WebSocketHandler] 设备注册成功: ${deviceId} (${payload.deviceType})`);
+  }
+
+  /**
+   * 处理配对码注册（daemon → relay）
+   *
+   * @param ws WebSocket 连接
+   * @param message 配对码消息
+   */
+  private handlePairingCode(ws: WebSocket, message: TransportMessage): void {
+    let payload: PairingCodePayload;
+
+    try {
+      payload = JSON.parse(message.payload) as PairingCodePayload;
+    } catch {
+      this.sendError(ws, 'INVALID_PAYLOAD', '配对码消息载荷格式错误');
+      return;
+    }
+
+    const daemonId = message.from;
+
+    // 验证 daemon 是否已注册
+    const device = this.deviceRegistry.getDevice(daemonId);
+    if (!device || device.deviceType !== 'daemon') {
+      this.sendError(ws, 'NOT_DAEMON', '只有 daemon 可以注册配对码');
+      return;
+    }
+
+    // 注册配对码
+    try {
+      this.deviceRegistry.registerPairingCode(
+        daemonId,
+        payload.code,
+        payload.expiresAt
+      );
+
+      // 发送确认
+      const ackPayload = JSON.stringify({ success: true, code: payload.code });
+      const ack = createTransportMessage('pairing_code', 'relay', ackPayload, daemonId);
+      ws.send(JSON.stringify(ack));
+
+      console.log(`[WebSocketHandler] 配对码已注册: ${payload.code} (daemon: ${daemonId})`);
+    } catch (error) {
+      this.sendError(
+        ws,
+        'PAIRING_CODE_FAILED',
+        error instanceof Error ? error.message : '配对码注册失败'
+      );
+    }
   }
 
   /**
@@ -172,10 +229,13 @@ export class WebSocketHandler {
     const daemonId = this.deviceRegistry.validatePairingCode(payload.code, clientId);
 
     if (daemonId) {
-      // 配对成功，通知双方
-      this.messageRouter.sendPairAck(clientId, true, daemonId);
+      // 获取 daemon 的公钥
+      const daemonPublicKey = this.deviceRegistry.getPublicKey(daemonId);
 
-      // 通知 daemon 配对成功
+      // 配对成功，通知 client（包含 daemon 公钥）
+      this.messageRouter.sendPairAck(clientId, true, daemonId, daemonPublicKey);
+
+      // 通知 daemon 配对成功（包含 client 公钥）
       const daemonPayload = JSON.stringify({
         success: true,
         clientId,
@@ -186,7 +246,7 @@ export class WebSocketHandler {
       console.log(`[WebSocketHandler] 配对成功: ${clientId} <-> ${daemonId}`);
     } else {
       // 配对失败
-      this.messageRouter.sendPairAck(clientId, false, undefined, '配对码无效或已过期');
+      this.messageRouter.sendPairAck(clientId, false, undefined, undefined, '配对码无效或已过期');
       console.log(`[WebSocketHandler] 配对失败: ${clientId}`);
     }
   }
