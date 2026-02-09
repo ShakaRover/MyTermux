@@ -102,8 +102,13 @@ export class Daemon extends EventEmitter {
     await this.pairingManager.initialize();
 
     // 创建 WebSocket 客户端
+    // 确保 URL 包含 /ws 路径
+    const wsUrl = this.options.relayUrl.endsWith('/ws')
+      ? this.options.relayUrl
+      : `${this.options.relayUrl.replace(/\/$/, '')}/ws`;
+
     this.wsClient = new WsClient({
-      url: this.options.relayUrl,
+      url: wsUrl,
       deviceType: 'daemon',
       deviceId: this.pairingManager.deviceId,
       publicKey: this.pairingManager.publicKey,
