@@ -39,12 +39,22 @@ export function TerminalView({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const lastBufferLengthRef = useRef(0);
 
+  // 使用 ref 存储回调，避免作为 useEffect 依赖项导致重新创建终端
+  const onInputRef = useRef(onInput);
+  const onResizeRef = useRef(onResize);
+  const disabledRef = useRef(disabled);
+
+  // 更新 ref 值
+  onInputRef.current = onInput;
+  onResizeRef.current = onResize;
+  disabledRef.current = disabled;
+
   // 获取终端缓冲区
   const terminalBuffer = useSessionsStore(
     (state) => state.sessions.find((s) => s.id === sessionId)?.terminalBuffer ?? ''
   );
 
-  // 初始化终端
+  // 初始化终端 - 只依赖 sessionId，使用 ref 访问回调
   useEffect(() => {
     if (!containerRef.current || terminalRef.current) return;
 
@@ -93,16 +103,16 @@ export function TerminalView({
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    // 处理用户输入
+    // 处理用户输入 - 使用 ref 访问最新的回调和状态
     terminal.onData((data) => {
-      if (!disabled) {
-        onInput(data);
+      if (!disabledRef.current) {
+        onInputRef.current(data);
       }
     });
 
     // 初始通知尺寸
-    if (onResize) {
-      onResize(terminal.cols, terminal.rows);
+    if (onResizeRef.current) {
+      onResizeRef.current(terminal.cols, terminal.rows);
     }
 
     return () => {
@@ -110,17 +120,17 @@ export function TerminalView({
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [disabled, onInput, onResize]);
+  }, [sessionId]); // 只依赖 sessionId
 
   // 处理窗口尺寸变化
   const handleResize = useCallback(() => {
     if (fitAddonRef.current && terminalRef.current) {
       fitAddonRef.current.fit();
-      if (onResize) {
-        onResize(terminalRef.current.cols, terminalRef.current.rows);
+      if (onResizeRef.current) {
+        onResizeRef.current(terminalRef.current.cols, terminalRef.current.rows);
       }
     }
-  }, [onResize]);
+  }, []); // 无依赖，使用 ref 访问回调
 
   // 监听窗口尺寸变化
   useEffect(() => {

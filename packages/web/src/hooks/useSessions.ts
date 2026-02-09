@@ -4,27 +4,22 @@
  * 封装会话相关的操作，包括创建、关闭、发送消息等
  */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   generateMessageId,
   type SessionType,
   type SessionOptions,
-  type AppMessage,
   type SessionCreateMessage,
   type SessionListMessage,
   type SessionCloseMessage,
   type SessionInputMessage,
   type SessionResizeMessage,
   type PermissionRespondMessage,
-  type SessionCreatedMessage,
-  type SessionListResponseMessage,
-  type SessionClosedMessage,
-  type SessionOutputMessage,
-  type PermissionRequestMessage,
 } from '@mycc/shared';
 import { useSessionsStore, type ChatMessage } from '../stores/sessionsStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWebSocket } from './useWebSocket';
+import { initializeGlobalMessageHandler, getGlobalMessageHandler } from './globalMessageHandler';
 
 /** 会话 Hook 返回值 */
 export interface UseSessionsReturn {
@@ -49,94 +44,27 @@ export interface UseSessionsReturn {
  */
 export function useSessions(): UseSessionsReturn {
   const {
-    addSession,
-    removeSession,
-    setSessions,
     addMessage,
-    appendTerminalOutput,
-    addPermissionRequest,
     removePermissionRequest,
     setLoading,
   } = useSessionsStore();
 
   const { state: connectionState } = useConnectionStore();
 
-  /**
-   * 处理应用层消息
-   */
-  const handleAppMessage = useCallback(
-    (message: AppMessage) => {
-      switch (message.action) {
-        case 'session:created': {
-          const msg = message as SessionCreatedMessage;
-          addSession(msg.session);
-          break;
-        }
+  // 确保全局消息处理器只初始化一次
+  const initializedRef = useRef(false);
+  useEffect(() => {
+    if (!initializedRef.current) {
+      initializeGlobalMessageHandler();
+      initializedRef.current = true;
+    }
+  }, []);
 
-        case 'session:list_response': {
-          const msg = message as SessionListResponseMessage;
-          setSessions(msg.sessions);
-          setLoading(false);
-          break;
-        }
-
-        case 'session:closed': {
-          const msg = message as SessionClosedMessage;
-          removeSession(msg.sessionId);
-          break;
-        }
-
-        case 'session:output': {
-          const msg = message as SessionOutputMessage;
-          // 根据会话类型处理输出
-          const sessions = useSessionsStore.getState().sessions;
-          const session = sessions.find((s) => s.id === msg.sessionId);
-
-          if (session) {
-            if (session.type === 'terminal') {
-              appendTerminalOutput(msg.sessionId, msg.data);
-            } else {
-              // Claude 会话，解析为消息
-              try {
-                const chatMessage: ChatMessage = {
-                  id: generateMessageId(),
-                  role: 'assistant',
-                  content: msg.data,
-                  timestamp: Date.now(),
-                };
-                addMessage(msg.sessionId, chatMessage);
-              } catch {
-                // 如果不是 JSON，直接作为消息内容
-                const chatMessage: ChatMessage = {
-                  id: generateMessageId(),
-                  role: 'assistant',
-                  content: msg.data,
-                  timestamp: Date.now(),
-                };
-                addMessage(msg.sessionId, chatMessage);
-              }
-            }
-          }
-          break;
-        }
-
-        case 'permission:request': {
-          const msg = message as PermissionRequestMessage;
-          addPermissionRequest(msg.request);
-          break;
-        }
-
-        default:
-          // 忽略其他消息类型
-          break;
-      }
-    },
-    [addSession, setSessions, setLoading, removeSession, appendTerminalOutput, addMessage, addPermissionRequest]
+  // 使用全局消息处理器
+  const handler = getGlobalMessageHandler();
+  const { send } = useWebSocket(
+    handler ? { onAppMessage: handler } : {}
   );
-
-  const { send } = useWebSocket({
-    onAppMessage: handleAppMessage,
-  });
 
   /**
    * 检查连接状态

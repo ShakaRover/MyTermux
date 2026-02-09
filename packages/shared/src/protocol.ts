@@ -223,23 +223,42 @@ export interface AppErrorMessage extends AppMessage {
 // 类型守卫
 // ============================================================================
 
+/** 有效的传输层消息类型 */
+const VALID_TRANSPORT_TYPES = new Set<string>([
+  'register', 'pair', 'pair_ack', 'message', 'heartbeat', 'error'
+]);
+
+/** 有效的应用层消息动作 */
+const VALID_APP_ACTIONS = new Set<string>([
+  'session:create', 'session:created', 'session:list', 'session:list_response',
+  'session:close', 'session:closed', 'session:input', 'session:output',
+  'session:resize', 'permission:request', 'permission:respond', 'error'
+]);
+
 /** 检查是否为传输层消息 */
 export function isTransportMessage(msg: unknown): msg is TransportMessage {
+  if (typeof msg !== 'object' || msg === null) {
+    return false;
+  }
+  const obj = msg as Record<string, unknown>;
   return (
-    typeof msg === 'object' &&
-    msg !== null &&
-    'type' in msg &&
-    'from' in msg &&
-    'timestamp' in msg
+    typeof obj['type'] === 'string' &&
+    VALID_TRANSPORT_TYPES.has(obj['type']) &&
+    typeof obj['from'] === 'string' &&
+    typeof obj['timestamp'] === 'number' &&
+    typeof obj['payload'] === 'string'
   );
 }
 
 /** 检查是否为应用层消息 */
 export function isAppMessage(msg: unknown): msg is AppMessage {
+  if (typeof msg !== 'object' || msg === null) {
+    return false;
+  }
+  const obj = msg as Record<string, unknown>;
   return (
-    typeof msg === 'object' &&
-    msg !== null &&
-    'action' in msg
+    typeof obj['action'] === 'string' &&
+    VALID_APP_ACTIONS.has(obj['action'])
   );
 }
 

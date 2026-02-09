@@ -35,7 +35,7 @@ export interface UseEncryptionReturn {
  */
 export function useEncryption(): UseEncryptionReturn {
   const [isInitialized, setIsInitialized] = useState(false);
-  const { keyPair, sharedKey, setKeyPair, setSharedKey } = useConnectionStore();
+  const { setKeyPair, setSharedKey } = useConnectionStore();
 
   /**
    * 初始化密钥对
@@ -49,42 +49,51 @@ export function useEncryption(): UseEncryptionReturn {
 
   /**
    * 派生共享密钥
+   * 使用 getState() 获取最新的 keyPair，避免闭包问题
    */
   const deriveSharedKey = useCallback(
     async (peerPublicKey: string): Promise<void> => {
-      if (!keyPair) {
+      // 从 store 获取最新状态，避免闭包问题
+      const currentKeyPair = useConnectionStore.getState().keyPair;
+      if (!currentKeyPair) {
         throw new Error('密钥对未初始化');
       }
-      const shared = await deriveSharedSecret(keyPair.privateKey, peerPublicKey);
+      const shared = await deriveSharedSecret(currentKeyPair.privateKey, peerPublicKey);
       setSharedKey(shared);
     },
-    [keyPair, setSharedKey]
+    [setSharedKey]
   );
 
   /**
    * 加密消息
+   * 使用 getState() 获取最新的 sharedKey，避免闭包问题
    */
   const encrypt = useCallback(
     async <T>(data: T): Promise<string> => {
-      if (!sharedKey) {
+      // 从 store 获取最新状态，避免闭包问题
+      const currentSharedKey = useConnectionStore.getState().sharedKey;
+      if (!currentSharedKey) {
         throw new Error('共享密钥未建立');
       }
-      return encryptJson(sharedKey, data);
+      return encryptJson(currentSharedKey, data);
     },
-    [sharedKey]
+    []
   );
 
   /**
    * 解密消息
+   * 使用 getState() 获取最新的 sharedKey，避免闭包问题
    */
   const decrypt = useCallback(
     async <T>(encryptedData: string): Promise<T> => {
-      if (!sharedKey) {
+      // 从 store 获取最新状态，避免闭包问题
+      const currentSharedKey = useConnectionStore.getState().sharedKey;
+      if (!currentSharedKey) {
         throw new Error('共享密钥未建立');
       }
-      return decryptJson<T>(sharedKey, encryptedData);
+      return decryptJson<T>(currentSharedKey, encryptedData);
     },
-    [sharedKey]
+    []
   );
 
   return {

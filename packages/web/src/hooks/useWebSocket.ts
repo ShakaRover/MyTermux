@@ -90,20 +90,36 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         switch (message.type) {
           case 'pair_ack': {
             // 配对确认
-            const payload = JSON.parse(message.payload) as {
+            let payload: {
               success: boolean;
               daemonId?: string;
               publicKey?: string;
               error?: string;
             };
+            try {
+              payload = JSON.parse(message.payload) as typeof payload;
+            } catch {
+              setError('配对响应格式错误');
+              callbacksRef.current.onError?.('配对响应格式错误');
+              break;
+            }
 
             if (payload.success && payload.daemonId && payload.publicKey) {
-              // 派生共享密钥
-              await deriveSharedKey(payload.publicKey);
-              setDaemonId(payload.daemonId);
-              setState('paired');
-              callbacksRef.current.onPaired?.(payload.daemonId);
+              try {
+                // 派生共享密钥 - 必须成功才能继续
+                await deriveSharedKey(payload.publicKey);
+                setDaemonId(payload.daemonId);
+                setState('paired');
+                callbacksRef.current.onPaired?.(payload.daemonId);
+              } catch (err) {
+                // 密钥派生失败，回退到 connected 状态
+                setState('connected');
+                const errorMsg = err instanceof Error ? err.message : '密钥派生失败';
+                setError(errorMsg);
+                callbacksRef.current.onError?.(errorMsg);
+              }
             } else {
+              setState('connected');
               setError(payload.error || '配对失败');
               callbacksRef.current.onError?.(payload.error || '配对失败');
             }
@@ -124,9 +140,15 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
           }
 
           case 'error': {
-            const payload = JSON.parse(message.payload) as { code: string; message: string };
-            setError(payload.message);
-            callbacksRef.current.onError?.(payload.message);
+            let payload: { code: string; message: string };
+            try {
+              payload = JSON.parse(message.payload) as typeof payload;
+              setError(payload.message);
+              callbacksRef.current.onError?.(payload.message);
+            } catch {
+              setError('收到错误消息，但格式无效');
+              callbacksRef.current.onError?.('收到错误消息，但格式无效');
+            }
             break;
           }
 
