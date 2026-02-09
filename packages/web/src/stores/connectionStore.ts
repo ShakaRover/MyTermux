@@ -69,7 +69,7 @@ const initialState: ConnectionStoreState = {
   keyPair: null,
   sharedKey: null,
   ws: null,
-  relayUrl: import.meta.env.VITE_RELAY_URL || 'wss://relay.mycc.dev',
+  relayUrl: import.meta.env.VITE_RELAY_URL || 'ws://localhost:3000/ws',
 };
 
 /** 连接状态 Store */
