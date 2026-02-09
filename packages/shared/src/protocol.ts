@@ -11,7 +11,7 @@ import type {
   SessionInfo,
   SessionOptions,
   PermissionRequest,
-} from './types';
+} from './types.js';
 
 // ============================================================================
 // 传输层协议（中继可见）

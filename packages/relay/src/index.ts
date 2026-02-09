@@ -10,10 +10,10 @@
 import { serve } from '@hono/node-server';
 import { WebSocketServer } from 'ws';
 import type { Server as HttpServer } from 'node:http';
-import { createServer } from './server';
-import { DeviceRegistry } from './device-registry';
-import { MessageRouter } from './message-router';
-import { WebSocketHandler } from './websocket-handler';
+import { createServer } from './server.js';
+import { DeviceRegistry } from './device-registry.js';
+import { MessageRouter } from './message-router.js';
+import { WebSocketHandler } from './websocket-handler.js';
 
 // 从环境变量获取端口
 const port = Number(process.env['PORT']) || 3000;
