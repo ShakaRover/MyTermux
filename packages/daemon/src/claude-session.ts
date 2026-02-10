@@ -14,6 +14,7 @@ import type {
   PermissionRequest,
 } from '@mycc/shared';
 import { randomUUID } from 'crypto';
+import { createPtyEnv } from './pty-env.js';
 
 // ============================================================================
 // 类型定义
@@ -115,7 +116,7 @@ export class ClaudeSession extends EventEmitter {
         cols: 120,
         rows: 40,
         cwd,
-        env: process.env as Record<string, string>,
+        env: createPtyEnv(),
       });
 
       // 监听输出

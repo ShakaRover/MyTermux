@@ -8,6 +8,7 @@ import { EventEmitter } from 'events';
 import * as pty from 'node-pty';
 import type { IPty } from 'node-pty';
 import type { SessionInfo, SessionStatus, TerminalSessionOptions } from '@mycc/shared';
+import { createPtyEnv } from './pty-env.js';
 
 // ============================================================================
 // 类型定义
@@ -80,7 +81,7 @@ export class TerminalSession extends EventEmitter {
         cols,
         rows,
         cwd,
-        env: process.env as Record<string, string>,
+        env: createPtyEnv(),
       });
 
       // 监听输出

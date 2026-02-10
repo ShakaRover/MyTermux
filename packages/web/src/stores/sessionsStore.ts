@@ -85,8 +85,9 @@ export const useSessionsStore = create<SessionsStoreState & SessionsStoreActions
     setSessions: (sessions) =>
       set({
         sessions: sessions.map((s): SessionData => {
+          // 所有会话类型都初始化 terminalBuffer（Claude Code 和终端都是 TUI 程序）
           if (s.type === 'claude') {
-            return { ...s, messages: [] };
+            return { ...s, terminalBuffer: '', messages: [] };
           }
           return { ...s, terminalBuffer: '' };
         }),
@@ -94,10 +95,10 @@ export const useSessionsStore = create<SessionsStoreState & SessionsStoreActions
 
     addSession: (session) =>
       set((state) => {
-        const newSession: SessionData =
-          session.type === 'claude'
-            ? { ...session, messages: [] }
-            : { ...session, terminalBuffer: '' };
+        // 所有会话类型都初始化 terminalBuffer
+        const newSession: SessionData = session.type === 'claude'
+          ? { ...session, terminalBuffer: '', messages: [] }
+          : { ...session, terminalBuffer: '' };
         return {
           sessions: [...state.sessions, newSession],
           // 自动切换到新会话
@@ -139,8 +140,8 @@ export const useSessionsStore = create<SessionsStoreState & SessionsStoreActions
     appendTerminalOutput: (sessionId, data) =>
       set((state) => ({
         sessions: state.sessions.map((s) =>
-          s.id === sessionId && s.terminalBuffer !== undefined
-            ? { ...s, terminalBuffer: s.terminalBuffer + data }
+          s.id === sessionId
+            ? { ...s, terminalBuffer: (s.terminalBuffer ?? '') + data }
             : s
         ),
       })),

@@ -12,7 +12,6 @@ import { useSessionsStore } from '../stores/sessionsStore';
 import { useSessions } from '../hooks/useSessions';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { SessionList } from '../components/SessionList';
-import { ChatView } from '../components/ChatView';
 import { TerminalView } from '../components/TerminalView';
 import { PermissionDialog } from '../components/PermissionDialog';
 import { NewSessionDialog } from '../components/NewSessionDialog';
@@ -83,19 +82,6 @@ export function DashboardPage() {
       }
     },
     [closeSession]
-  );
-
-  // 处理发送消息
-  const handleSendMessage = useCallback(
-    async (content: string) => {
-      if (!activeSessionId) return;
-      try {
-        await sendInput(activeSessionId, content);
-      } catch (err) {
-        console.error('发送消息失败:', err);
-      }
-    },
-    [activeSessionId, sendInput]
   );
 
   // 处理终端输入
@@ -355,23 +341,15 @@ export function DashboardPage() {
               </button>
             </header>
 
-            {/* 会话内容 */}
+            {/* 会话内容 - Claude Code 和终端都是 TUI 程序，统一使用 TerminalView */}
             <div className="flex-1 overflow-hidden">
-              {activeSession.type === 'claude' ? (
-                <ChatView
-                  sessionId={activeSession.id}
-                  onSendMessage={handleSendMessage}
-                  disabled={activeSession.status !== 'running'}
-                />
-              ) : (
-                <TerminalView
-                  sessionId={activeSession.id}
-                  onInput={handleTerminalInput}
-                  onResize={handleTerminalResize}
-                  disabled={activeSession.status !== 'running'}
-                  className="h-full"
-                />
-              )}
+              <TerminalView
+                sessionId={activeSession.id}
+                onInput={handleTerminalInput}
+                onResize={handleTerminalResize}
+                disabled={activeSession.status !== 'running'}
+                className="h-full"
+              />
             </div>
           </>
         ) : (

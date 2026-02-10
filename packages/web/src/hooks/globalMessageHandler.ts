@@ -7,7 +7,6 @@
  */
 
 import {
-  generateMessageId,
   type AppMessage,
   type SessionCreatedMessage,
   type SessionListResponseMessage,
@@ -15,7 +14,7 @@ import {
   type SessionOutputMessage,
   type PermissionRequestMessage,
 } from '@mycc/shared';
-import { useSessionsStore, type ChatMessage } from '../stores/sessionsStore';
+import { useSessionsStore } from '../stores/sessionsStore';
 import { useConnectionStore } from '../stores/connectionStore';
 
 /** 消息处理器类型 */
@@ -60,24 +59,8 @@ export function initializeGlobalMessageHandler(): void {
 
       case 'session:output': {
         const msg = message as SessionOutputMessage;
-        // 根据会话类型处理输出
-        const sessions = store.sessions;
-        const session = sessions.find((s) => s.id === msg.sessionId);
-
-        if (session) {
-          if (session.type === 'terminal') {
-            store.appendTerminalOutput(msg.sessionId, msg.data);
-          } else {
-            // Claude 会话，解析为消息
-            const chatMessage: ChatMessage = {
-              id: generateMessageId(),
-              role: 'assistant',
-              content: msg.data,
-              timestamp: Date.now(),
-            };
-            store.addMessage(msg.sessionId, chatMessage);
-          }
-        }
+        // Claude Code 和终端会话都是 TUI 程序，统一使用终端缓冲区渲染
+        store.appendTerminalOutput(msg.sessionId, msg.data);
         break;
       }
 
