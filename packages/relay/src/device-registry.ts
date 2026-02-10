@@ -77,11 +77,28 @@ export class DeviceRegistry {
     publicKey?: string,
     accessToken?: string
   ): void {
-    // 如果设备已存在，先断开旧连接
+    // 如果设备已存在，先断开旧连接（同一 ws 重复注册时跳过关闭）
     const existing = this.devices.get(deviceId);
-    if (existing) {
+    if (existing && existing.ws !== ws) {
       console.log(`[DeviceRegistry] 设备重复注册，断开旧连接: ${deviceId}`);
       existing.ws.close(1000, '新连接替换旧连接');
+    } else if (existing) {
+      // 同一 ws 重复注册（如 token_auth 流程），仅更新元数据，保留配对关系
+      console.log(`[DeviceRegistry] 同一 ws 重复注册，更新设备信息: ${deviceId}`);
+      existing.lastHeartbeat = Date.now();
+      if (publicKey !== undefined) existing.publicKey = publicKey;
+      // 处理 daemon 的 accessToken
+      if (deviceType === 'daemon') {
+        if (accessToken) {
+          this.registerAccessToken(deviceId, accessToken);
+        }
+        for (const [, entry] of this.accessTokens.entries()) {
+          if (entry.daemonId === deviceId && entry.disconnectedAt) {
+            delete entry.disconnectedAt;
+          }
+        }
+      }
+      return;
     }
 
     const now = Date.now();

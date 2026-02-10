@@ -27,6 +27,19 @@ import { SessionManager } from './session-manager.js';
 import { PairingManager } from './pairing.js';
 
 // ============================================================================
+// 自定义错误类型
+// ============================================================================
+
+/** 密钥/加密相关错误（不代表客户端离线） */
+class CryptoError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = 'CryptoError';
+    if (cause !== undefined) this.cause = cause;
+  }
+}
+
+// ============================================================================
 // 类型定义
 // ============================================================================
 
@@ -77,6 +90,8 @@ export class Daemon extends EventEmitter {
   private readonly pairingManager: PairingManager;
   /** 运行状态 */
   private _isRunning = false;
+  /** 当前在线的客户端 ID 集合（仅收到 token_ack 成功且未断线的） */
+  private onlineClients = new Set<string>();
 
   constructor(options: DaemonOptions) {
     super();
@@ -137,6 +152,9 @@ export class Daemon extends EventEmitter {
     // 关闭所有会话
     this.sessionManager.closeAllSessions('Daemon stopping');
 
+    // 清空在线客户端集合
+    this.onlineClients.clear();
+
     // 断开 WebSocket 连接
     if (this.wsClient) {
       this.wsClient.disconnect();
@@ -172,6 +190,7 @@ export class Daemon extends EventEmitter {
     deviceId: string;
     sessionCount: number;
     authenticatedClientsCount: number;
+    onlineClientsCount: number;
   } {
     return {
       isRunning: this._isRunning,
@@ -179,6 +198,7 @@ export class Daemon extends EventEmitter {
       deviceId: this.pairingManager.deviceId,
       sessionCount: this.sessionManager.sessionCount,
       authenticatedClientsCount: this.pairingManager.getPairedClients().length,
+      onlineClientsCount: this.onlineClients.size,
     };
   }
 
@@ -211,6 +231,8 @@ export class Daemon extends EventEmitter {
     });
 
     this.wsClient.on('disconnected', () => {
+      // daemon 与 relay 断线，所有客户端视为离线
+      this.onlineClients.clear();
       this.emit('disconnected');
     });
 
@@ -345,6 +367,9 @@ export class Daemon extends EventEmitter {
         );
         console.log(`新客户端认证成功: ${payload.clientId}`);
       }
+
+      // 无论是重连还是新认证，都标记客户端为在线
+      this.onlineClients.add(payload.clientId);
     } catch (error) {
       this.emit('error', this.toError(error));
     }
@@ -518,18 +543,34 @@ export class Daemon extends EventEmitter {
       const payload = JSON.parse(message.payload) as {
         code: string;
         message: string;
+        /** PEER_DISCONNECTED 专用：断线设备的 ID */
+        deviceId?: string;
       };
 
+      // PEER_DISCONNECTED：客户端与 relay 断开，从在线集合中移除
+      if (payload.code === 'PEER_DISCONNECTED') {
+        // 优先使用结构化 deviceId 字段，兼容旧格式的正则解析
+        const disconnectedId = payload.deviceId
+          ?? payload.message.match(/:\s*(.+)$/)?.[1]?.trim();
+        if (disconnectedId) {
+          if (this.onlineClients.delete(disconnectedId)) {
+            console.log(`客户端离线（PEER_DISCONNECTED）: ${disconnectedId}`);
+          }
+        } else {
+          console.warn('[Daemon] PEER_DISCONNECTED 消息格式异常，无法解析 deviceId:', payload.message);
+        }
+        return;
+      }
+
       // C5: 临时性错误也用 console.warn 记录，便于调试；不触发 error 事件以避免干扰正常流程
-      const transientErrorCodes = ['ROUTE_FAILED', 'PEER_DISCONNECTED'];
-      if (transientErrorCodes.includes(payload.code)) {
+      if (payload.code === 'ROUTE_FAILED') {
         console.warn(`[Transient] [${payload.code}] ${payload.message}`);
         return;
       }
 
       this.emit('error', new Error(`[${payload.code}] ${payload.message}`));
-    } catch {
-      this.emit('error', new Error(`收到错误消息: ${message.payload}`));
+    } catch (parseError) {
+      this.emit('error', new Error(`处理错误消息失败: ${this.toError(parseError).message}`));
     }
   }
 
@@ -539,32 +580,53 @@ export class Daemon extends EventEmitter {
 
   /**
    * 发送应用层消息
+   *
+   * @throws {CryptoError} 密钥获取/加密失败时抛出
+   * @throws {Error} WebSocket 未连接或发送失败时抛出
    */
   private async sendAppMessage(
     clientId: string,
     message: Record<string, unknown>
   ): Promise<void> {
-    if (!this.wsClient) return;
-
-    const sharedKey = await this.pairingManager.getSharedKey(clientId);
-    if (!sharedKey) {
-      throw new Error('无法获取共享密钥');
+    if (!this.wsClient) {
+      throw new Error('WebSocket 未连接');
     }
 
-    const encryptedPayload = await encryptJson(sharedKey, message);
+    try {
+      const sharedKey = await this.pairingManager.getSharedKey(clientId);
+      if (!sharedKey) {
+        throw new Error('无法获取共享密钥');
+      }
 
-    const transportMessage = createTransportMessage(
-      'message',
-      this.pairingManager.deviceId,
-      encryptedPayload,
-      clientId
-    );
+      const encryptedPayload = await encryptJson(sharedKey, message);
 
-    this.wsClient.sendMessage(transportMessage);
+      const transportMessage = createTransportMessage(
+        'message',
+        this.pairingManager.deviceId,
+        encryptedPayload,
+        clientId
+      );
+
+      this.wsClient.sendMessage(transportMessage);
+    } catch (error) {
+      // wsClient.sendMessage 抛出的 'WebSocket 未连接' 是网络错误，直接透传
+      if (error instanceof CryptoError) throw error;
+      const msg = this.toError(error).message;
+      // 密钥获取失败和加密失败包装为 CryptoError，其他错误（网络/发送）透传
+      if (msg === '无法获取共享密钥' || msg.includes('密钥对未初始化')) {
+        throw new CryptoError(msg, error);
+      }
+      // encryptJson 等加密操作的异常也包装为 CryptoError
+      // 唯一的非加密异常来源是 wsClient.sendMessage（'WebSocket 未连接'）
+      if (msg !== 'WebSocket 未连接') {
+        throw new CryptoError(msg, error);
+      }
+      throw error;
+    }
   }
 
   /**
-   * 广播会话输出到所有已认证客户端
+   * 广播会话输出到所有在线客户端
    */
   private async broadcastSessionOutput(
     sessionId: string,
@@ -613,20 +675,36 @@ export class Daemon extends EventEmitter {
   }
 
   /**
-   * 广播消息到所有已认证客户端
+   * 广播消息到所有在线客户端
+   *
+   * 仅向 onlineClients 集合中的客户端发送，跳过历史认证但已离线的客户端。
+   * 通过 CryptoError 类型区分密钥/加密错误（仅记录，不移除）和网络错误（标记离线），
+   * 使用快照迭代避免在遍历 Set 时修改其内容。
    */
   private async broadcastToAllClients(
     message: Record<string, unknown>
   ): Promise<void> {
-    const clients = this.pairingManager.getPairedClients();
+    const failedClients: string[] = [];
 
-    for (const client of clients) {
+    // 使用数组快照迭代，避免在遍历 Set 时修改
+    for (const clientId of [...this.onlineClients]) {
       try {
-        await this.sendAppMessage(client.clientId, message);
+        await this.sendAppMessage(clientId, message);
       } catch (error) {
-        // 单个客户端发送失败不影响其他客户端
-        console.error(`发送消息到客户端 ${client.clientId} 失败:`, error);
+        if (error instanceof CryptoError) {
+          // 密钥/加密错误不代表客户端离线，仅记录日志
+          console.error(`发送消息到客户端 ${clientId} 加密失败（不移除）:`, error.message);
+        } else {
+          // 网络/发送类错误，标记为离线
+          console.error(`发送消息到客户端 ${clientId} 失败，标记为离线:`, this.toError(error).message);
+          failedClients.push(clientId);
+        }
       }
+    }
+
+    // 批量移除失败客户端
+    for (const clientId of failedClients) {
+      this.onlineClients.delete(clientId);
     }
   }
 }

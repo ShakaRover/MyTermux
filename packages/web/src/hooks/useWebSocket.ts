@@ -344,8 +344,18 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       };
 
       socket.onclose = () => {
-        cleanup();
         const store = useConnectionStore.getState();
+
+        // 必须在 cleanup() 之前检查：如果当前 store 中的 ws 已被替换为新实例，
+        // 说明这是旧连接被 relay 关闭（同一 deviceId 重新注册），
+        // 不应清理定时器（新连接正在使用），也不应触发状态变更和重连，
+        // 否则会清掉新连接的心跳导致 relay 超时断开，或触发无限重连循环
+        if (store.ws !== null && store.ws !== socket) {
+          console.log('旧 WebSocket 关闭（已被新连接替换），跳过清理和重连');
+          return;
+        }
+
+        cleanup();
         store.setState('disconnected');
         store.setWs(null);
         callbacksRef.current.onDisconnected?.();

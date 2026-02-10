@@ -79,8 +79,8 @@ export class WebSocketHandler {
 
     try {
       message = JSON.parse(data.toString());
-    } catch {
-      console.error('[WebSocketHandler] 消息解析失败');
+    } catch (parseErr) {
+      console.error('[WebSocketHandler] 消息解析失败:', parseErr);
       this.sendError(ws, 'INVALID_JSON', '无效的 JSON 格式');
       return;
     }
@@ -124,7 +124,8 @@ export class WebSocketHandler {
 
     try {
       payload = JSON.parse(message.payload) as RegisterPayload;
-    } catch {
+    } catch (parseErr) {
+      console.error('[WebSocketHandler] 注册消息载荷解析失败:', parseErr);
       this.sendError(ws, 'INVALID_PAYLOAD', '注册消息载荷格式错误');
       return;
     }
@@ -142,6 +143,9 @@ export class WebSocketHandler {
       console.warn(`[WebSocketHandler] WebSocket 重复注册: ${existingDeviceId} -> ${deviceId}`);
       this.deviceRegistry.unregisterDevice(existingDeviceId);
     }
+
+    // 如果同一 deviceId 已被另一个 ws 注册（重连场景），清理旧 ws 的映射
+    this.cleanupOldWsMapping(deviceId, ws);
 
     // 注册设备（包含公钥和可选的 accessToken）
     this.deviceRegistry.registerDevice(
@@ -172,7 +176,8 @@ export class WebSocketHandler {
 
     try {
       payload = JSON.parse(message.payload) as TokenAuthPayload;
-    } catch {
+    } catch (parseErr) {
+      console.error('[WebSocketHandler] Token 认证消息载荷解析失败:', parseErr);
       this.sendError(ws, 'INVALID_PAYLOAD', 'Token 认证消息载荷格式错误');
       // I9: payload 解析失败意味着客户端发送了无效数据，关闭连接避免资源占用
       ws.close(4000, 'Token 认证消息载荷格式错误');
@@ -193,6 +198,9 @@ export class WebSocketHandler {
       console.warn(`[WebSocketHandler] WebSocket 重复注册: ${existingDeviceId} -> ${clientId}`);
       this.deviceRegistry.unregisterDevice(existingDeviceId);
     }
+
+    // 如果同一 clientId 已被另一个 ws 注册（重连场景），清理旧 ws 的映射
+    this.cleanupOldWsMapping(clientId, ws);
 
     // 先注册客户端设备
     this.deviceRegistry.registerDevice(ws, clientId, payload.deviceType, payload.publicKey);
@@ -297,11 +305,21 @@ export class WebSocketHandler {
     if (deviceId) {
       console.log(`[WebSocketHandler] 连接关闭: ${deviceId} (code: ${code}, reason: ${reason})`);
 
-      // 通知配对设备
-      this.messageRouter.notifyPeerDisconnected(deviceId);
+      // 检查当前注册的 ws 是否和正在关闭的 ws 相同。
+      // 如果不同，说明该 deviceId 已被新连接替换（重连场景），
+      // 旧 ws 的 close 事件不应注销新连接的注册信息。
+      const currentWs = this.deviceRegistry.getWebSocket(deviceId);
+      if (currentWs === ws) {
+        // 通知配对设备
+        this.messageRouter.notifyPeerDisconnected(deviceId);
 
-      // 注销设备
-      this.deviceRegistry.unregisterDevice(deviceId);
+        // 注销设备
+        this.deviceRegistry.unregisterDevice(deviceId);
+      } else {
+        // 该 deviceId 已被新 ws 替换（重连场景），旧 ws 关闭不影响新注册
+        console.log(`[WebSocketHandler] 旧连接关闭，设备已被新连接替换: ${deviceId}`);
+      }
+
       this.wsToDeviceId.delete(ws);
     } else {
       console.log(`[WebSocketHandler] 未注册连接关闭 (code: ${code})`);
@@ -317,6 +335,24 @@ export class WebSocketHandler {
   private handleError(ws: WebSocket, error: Error): void {
     const deviceId = this.wsToDeviceId.get(ws) ?? 'unknown';
     console.error(`[WebSocketHandler] 连接错误: ${deviceId}`, error.message);
+  }
+
+  /**
+   * 清理旧 WebSocket 的映射
+   *
+   * 当同一 deviceId 使用新 ws 重连时，旧 ws 可能仍在 wsToDeviceId 中。
+   * 如果不清理，旧 ws 的 close 事件会误注销新连接的注册信息。
+   *
+   * @param deviceId 设备 ID
+   * @param newWs 新的 WebSocket 连接
+   */
+  private cleanupOldWsMapping(deviceId: string, newWs: WebSocket): void {
+    const currentWs = this.deviceRegistry.getWebSocket(deviceId);
+    if (currentWs && currentWs !== newWs) {
+      console.log(`[WebSocketHandler] 清理旧连接映射: ${deviceId}`);
+      this.wsToDeviceId.delete(currentWs);
+      currentWs.close(4000, '被新连接替换');
+    }
   }
 
   /**

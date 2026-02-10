@@ -45,7 +45,7 @@ describe('DeviceRegistry', () => {
       expect(device!.deviceType).toBe('daemon');
     });
 
-    it('重复注册同一设备应断开旧连接', () => {
+    it('重复注册同一设备（不同 ws）应断开旧连接', () => {
       const ws1 = createMockWs();
       const ws2 = createMockWs();
 
@@ -54,6 +54,19 @@ describe('DeviceRegistry', () => {
 
       expect(ws1.close).toHaveBeenCalledWith(1000, '新连接替换旧连接');
       expect(registry.getWebSocket('daemon-1')).toBe(ws2);
+    });
+
+    it('同一 ws 重复注册同一设备不应关闭连接', () => {
+      const ws = createMockWs();
+
+      registry.registerDevice(ws, 'client-1', 'client', 'pk-1');
+      // token_auth 流程中 relay 会用同一 ws 再次 registerDevice
+      registry.registerDevice(ws, 'client-1', 'client', 'pk-1-updated');
+
+      // 同一 ws 不应被关闭
+      expect(ws.close).not.toHaveBeenCalled();
+      // 公钥应更新为新值
+      expect(registry.getPublicKey('client-1')).toBe('pk-1-updated');
     });
 
     it('daemon 注册时携带 accessToken 应自动注册 Token', () => {

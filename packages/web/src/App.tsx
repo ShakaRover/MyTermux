@@ -12,7 +12,7 @@ import { useConnectionStore } from './stores/connectionStore';
 /**
  * 根路由重定向组件
  *
- * 根据连接状态自动重定向到配对页面或仪表盘
+ * 根据连接状态自动重定向到认证页面或仪表盘
  */
 function RootRedirect() {
   const { state } = useConnectionStore();
@@ -22,8 +22,8 @@ function RootRedirect() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // 否则跳转到配对页面
-  return <Navigate to="/pair" replace />;
+  // 否则跳转到认证页面
+  return <Navigate to="/auth" replace />;
 }
 
 /**
@@ -36,8 +36,11 @@ function App() {
         {/* 根路由重定向 */}
         <Route path="/" element={<RootRedirect />} />
 
-        {/* 配对页面 */}
-        <Route path="/pair" element={<PairingPage />} />
+        {/* 认证页面 */}
+        <Route path="/auth" element={<PairingPage />} />
+
+        {/* 兼容旧路径 /pair → /auth */}
+        <Route path="/pair" element={<Navigate to="/auth" replace />} />
 
         {/* 仪表盘页面 */}
         <Route path="/dashboard" element={<DashboardPage />} />

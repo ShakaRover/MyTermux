@@ -189,11 +189,13 @@ export class MessageRouter {
     const pairedDeviceIds = this.deviceRegistry.getPairedDeviceIds(disconnectedDeviceId);
     if (pairedDeviceIds) {
       for (const pairedId of pairedDeviceIds) {
-        this.sendError(
-          pairedId,
-          'PEER_DISCONNECTED',
-          `配对设备已断开连接: ${disconnectedDeviceId}`
-        );
+        // 使用结构化 payload 传递 disconnectedDeviceId，避免接收方依赖正则解析
+        const payload = JSON.stringify({
+          code: 'PEER_DISCONNECTED',
+          message: `配对设备已断开连接: ${disconnectedDeviceId}`,
+          deviceId: disconnectedDeviceId,
+        });
+        this.sendSystemMessage(pairedId, 'error', payload);
       }
     }
   }
