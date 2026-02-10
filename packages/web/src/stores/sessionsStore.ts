@@ -85,11 +85,12 @@ export const useSessionsStore = create<SessionsStoreState & SessionsStoreActions
     setSessions: (sessions) =>
       set({
         sessions: sessions.map((s): SessionData => {
-          // 所有会话类型都初始化 terminalBuffer（Claude Code 和终端都是 TUI 程序）
+          // 使用 outputHistory 初始化 terminalBuffer（重连时恢复历史输出）
+          const terminalBuffer = s.outputHistory ?? '';
           if (s.type === 'claude') {
-            return { ...s, terminalBuffer: '', messages: [] };
+            return { ...s, terminalBuffer, messages: [] };
           }
-          return { ...s, terminalBuffer: '' };
+          return { ...s, terminalBuffer };
         }),
       }),
 

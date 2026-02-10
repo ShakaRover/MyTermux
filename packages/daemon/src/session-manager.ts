@@ -98,13 +98,15 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * 列出所有活跃会话
+   * 列出所有活跃会话（包含输出历史，供客户端重连时回放）
    * @returns 会话信息列表
    */
   listSessions(): SessionInfo[] {
     const sessions: SessionInfo[] = [];
     for (const session of this.sessions.values()) {
-      sessions.push(session.getInfo());
+      const info = session.getInfo();
+      info.outputHistory = session.outputHistory;
+      sessions.push(info);
     }
     return sessions;
   }

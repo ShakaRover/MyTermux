@@ -24,6 +24,8 @@ export interface SessionInfo {
   createdAt: number;
   /** 会话标题/名称 */
   title: string;
+  /** 输出历史（客户端重连时回放，仅在 session:list_response 中携带） */
+  outputHistory?: string;
 }
 
 /** Claude 会话配置 */

@@ -50,6 +50,10 @@ export class TerminalSession extends EventEmitter {
   private readonly createdAt: number;
   /** 会话配置 */
   private readonly options: TerminalSessionOptions;
+  /** 完整输出历史（用于客户端重连时回放） */
+  private _outputHistory = '';
+  /** 输出历史最大长度（256KB） */
+  private static readonly MAX_OUTPUT_HISTORY = 256 * 1024;
 
   constructor(id: string, options: TerminalSessionOptions = {}) {
     super();
@@ -86,6 +90,11 @@ export class TerminalSession extends EventEmitter {
 
       // 监听输出
       this.pty.onData((data: string) => {
+        // 追加到完整输出历史（供客户端重连时回放）
+        this._outputHistory += data;
+        if (this._outputHistory.length > TerminalSession.MAX_OUTPUT_HISTORY) {
+          this._outputHistory = this._outputHistory.slice(-TerminalSession.MAX_OUTPUT_HISTORY);
+        }
         this.emit('data', data);
       });
 
@@ -168,6 +177,13 @@ export class TerminalSession extends EventEmitter {
       return { cols: this.options.cols ?? 80, rows: this.options.rows ?? 24 };
     }
     return { cols: this.pty.cols, rows: this.pty.rows };
+  }
+
+  /**
+   * 获取完整输出历史（供客户端重连时回放）
+   */
+  get outputHistory(): string {
+    return this._outputHistory;
   }
 
   // --------------------------------------------------------------------------

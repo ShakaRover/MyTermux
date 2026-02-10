@@ -74,6 +74,10 @@ export class ClaudeSession extends EventEmitter {
   private readonly options: ClaudeSessionOptions;
   /** 输出缓冲区（用于检测权限提示） */
   private outputBuffer = '';
+  /** 完整输出历史（用于客户端重连时回放） */
+  private _outputHistory = '';
+  /** 输出历史最大长度（256KB） */
+  private static readonly MAX_OUTPUT_HISTORY = 256 * 1024;
   /** 当前待处理的权限请求 */
   private pendingPermission: PermissionRequest | null = null;
 
@@ -219,6 +223,13 @@ export class ClaudeSession extends EventEmitter {
     return this._status;
   }
 
+  /**
+   * 获取完整输出历史（供客户端重连时回放）
+   */
+  get outputHistory(): string {
+    return this._outputHistory;
+  }
+
   // --------------------------------------------------------------------------
   // 私有方法
   // --------------------------------------------------------------------------
@@ -229,6 +240,12 @@ export class ClaudeSession extends EventEmitter {
   private handleOutput(data: string): void {
     // 发送原始输出
     this.emit('data', data);
+
+    // 追加到完整输出历史（供客户端重连时回放）
+    this._outputHistory += data;
+    if (this._outputHistory.length > ClaudeSession.MAX_OUTPUT_HISTORY) {
+      this._outputHistory = this._outputHistory.slice(-ClaudeSession.MAX_OUTPUT_HISTORY);
+    }
 
     // 更新缓冲区并检测权限提示
     this.outputBuffer += data;

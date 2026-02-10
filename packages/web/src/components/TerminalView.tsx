@@ -119,6 +119,7 @@ export function TerminalView({
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
+      lastBufferLengthRef.current = 0;
     };
   }, [sessionId]); // 只依赖 sessionId
 
