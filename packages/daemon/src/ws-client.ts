@@ -27,6 +27,8 @@ export interface WsClientOptions {
   deviceId: string;
   /** 公钥（Base64 编码） */
   publicKey: string;
+  /** Access Token（daemon 注册时携带） */
+  accessToken?: string;
   /** 初始重连延迟（毫秒） */
   initialReconnectDelay?: number;
   /** 最大重连延迟（毫秒） */
@@ -63,7 +65,7 @@ export interface WsClientEvents {
  */
 export class WsClient extends EventEmitter {
   private ws: WebSocket | null = null;
-  private readonly options: Required<WsClientOptions>;
+  private readonly options: Required<Omit<WsClientOptions, 'accessToken'>> & Pick<WsClientOptions, 'accessToken'>;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -204,12 +206,16 @@ export class WsClient extends EventEmitter {
    * 注册设备
    */
   private registerDevice(): void {
-    const payload = JSON.stringify({
+    const payload: Record<string, string> = {
       deviceType: this.options.deviceType,
       publicKey: this.options.publicKey,
-    });
+    };
 
-    this.send('register', payload);
+    if (this.options.accessToken) {
+      payload.accessToken = this.options.accessToken;
+    }
+
+    this.send('register', JSON.stringify(payload));
   }
 
   /**

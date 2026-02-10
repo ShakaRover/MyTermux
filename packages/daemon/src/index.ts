@@ -6,14 +6,17 @@
  * - mycc start  启动守护进程
  * - mycc stop   停止守护进程
  * - mycc status 查看状态
- * - mycc pair   重新生成配对码
+ * - mycc token  查看 Access Token
  */
 
 import { Command } from 'commander';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 import { Daemon } from './daemon.js';
+import { readAccessToken } from './pairing.js';
 
 // ============================================================================
 // 常量定义
@@ -21,6 +24,15 @@ import { Daemon } from './daemon.js';
 
 /** 配置目录 */
 const CONFIG_DIR = path.join(os.homedir(), '.mycc');
+
+/** 认证数据文件路径（沿用 pairing.json 文件名，保持向后兼容） */
+const AUTH_DATA_FILE = path.join(CONFIG_DIR, 'pairing.json');
+
+/** Token 脱敏显示：保留前缀 mycc-(5字符) + 前 4 位 hex + ... + 后 4 位 hex，共需至少 13 字符 */
+function maskToken(token: string): string {
+  if (token.length <= 13) return token;
+  return `${token.slice(0, 9)}...${token.slice(-4)}`;
+}
 
 /** PID 文件路径 */
 const PID_FILE = path.join(CONFIG_DIR, 'daemon.pid');
@@ -36,11 +48,7 @@ const STATUS_FILE = path.join(CONFIG_DIR, 'daemon.status');
  * 确保配置目录存在
  */
 async function ensureConfigDir(): Promise<void> {
-  try {
-    await fs.mkdir(CONFIG_DIR, { recursive: true });
-  } catch {
-    // 目录可能已存在
-  }
+  await fs.mkdir(CONFIG_DIR, { recursive: true });
 }
 
 /**
@@ -133,6 +141,67 @@ program
       return;
     }
 
+    // 后台模式：fork 子进程并立即退出父进程
+    if (!options.foreground) {
+      const scriptPath = fileURLToPath(import.meta.url);
+      const args = ['start', '-f', '-r', options.relay];
+      const logFile = path.join(CONFIG_DIR, 'daemon.log');
+
+      await ensureConfigDir();
+
+      const logFd = await fs.open(logFile, 'a');
+      // I3: 确保 logFd 在 spawn 失败时也能被关闭
+      try {
+        const child = spawn(process.execPath, [scriptPath, ...args], {
+          detached: true,
+          stdio: ['ignore', logFd.fd, logFd.fd],
+          env: { ...process.env },
+        });
+
+        child.unref();
+      } finally {
+        // logFd 需要在 spawn 之后关闭，子进程已继承该 fd
+        await logFd.close();
+      }
+
+      // 等待子进程写入 PID 文件，确认启动成功
+      let started = false;
+      for (let i = 0; i < 30; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        const pid = await readPidFile();
+        if (pid && isProcessRunning(pid)) {
+          started = true;
+          console.log(`守护进程已在后台启动 (PID: ${pid})`);
+
+          // 读取并显示 Access Token
+          try {
+            const content = await fs.readFile(AUTH_DATA_FILE, 'utf-8');
+            const data = JSON.parse(content) as { accessToken?: string };
+            if (data.accessToken) {
+              console.log(`Access Token: ${maskToken(data.accessToken)}`);
+            }
+          } catch (readErr) {
+            // I7: 区分文件不存在（正常情况）和其他错误
+            if ((readErr as NodeJS.ErrnoException).code === 'ENOENT') {
+              console.log('提示: 运行 pnpm --filter @mycc/daemon token 获取 Access Token');
+            } else {
+              console.warn('读取 Access Token 失败:', readErr instanceof Error ? readErr.message : readErr);
+            }
+          }
+
+          console.log(`日志文件: ${logFile}`);
+          break;
+        }
+      }
+
+      if (!started) {
+        console.error('守护进程启动超时，请检查日志:', logFile);
+        process.exit(1);
+      }
+      return;
+    }
+
+    // 前台模式：直接在当前进程运行
     console.log(`启动守护进程，连接到中继服务器: ${options.relay}`);
 
     const daemon = new Daemon({
@@ -152,10 +221,8 @@ program
       console.log('与中继服务器断开连接');
     });
 
-    daemon.on('pairingCode', (code, expiresAt) => {
-      const expiresIn = Math.round((expiresAt - Date.now()) / 1000);
-      console.log(`\n配对码: ${code}`);
-      console.log(`有效期: ${expiresIn} 秒\n`);
+    daemon.on('accessToken', (token) => {
+      console.log(`\nAccess Token 已更新: ${maskToken(token)}\n`);
     });
 
     daemon.on('error', (error) => {
@@ -179,11 +246,10 @@ program
       // 写入 PID 文件
       await writePidFile(process.pid);
 
-      // 生成初始配对码
-      const { code, expiresAt } = daemon.generatePairingCode();
-      const expiresIn = Math.round((expiresAt - Date.now()) / 1000);
-      console.log(`\n配对码: ${code}`);
-      console.log(`有效期: ${expiresIn} 秒\n`);
+      // 输出 Access Token
+      const token = daemon.getAccessToken();
+      console.log(`\nAccess Token: ${maskToken(token)}`);
+      console.log('客户端使用此 Token 连接 daemon\n');
 
       // 更新状态文件
       const updateStatus = async (): Promise<void> => {
@@ -194,9 +260,7 @@ program
       // 定期更新状态文件
       setInterval(() => { void updateStatus(); }, 5000);
 
-      if (options.foreground) {
-        console.log('守护进程正在前台运行，按 Ctrl+C 停止');
-      }
+      console.log('守护进程正在前台运行，按 Ctrl+C 停止');
     } catch (error) {
       console.error('启动失败:', error instanceof Error ? error.message : error);
       process.exit(1);
@@ -271,28 +335,38 @@ program
       console.log(`连接状态: ${status['isConnected'] ? '已连接' : '未连接'}`);
       console.log(`设备 ID: ${status['deviceId'] ?? '未知'}`);
       console.log(`活跃会话: ${status['sessionCount'] ?? 0}`);
-      console.log(`已配对客户端: ${status['pairedClientsCount'] ?? 0}`);
+      console.log(`已认证客户端: ${status['authenticatedClientsCount'] ?? 0}`);
     }
   });
 
 /**
- * pair 命令 - 生成新的配对码
+ * token 命令 - 查看 Access Token
  */
 program
-  .command('pair')
-  .description('重新生成配对码')
+  .command('token')
+  .description('查看 Access Token')
   .action(async () => {
-    const pid = await readPidFile();
+    try {
+      // I12: 复用 pairing.ts 的 readAccessToken，消除重复迁移逻辑
+      const { token, migrated } = await readAccessToken();
+      console.log(`Access Token: ${token}`);
+      if (migrated) {
+        console.log('(已自动升级旧版配置文件)');
+      }
 
-    if (!pid || !isProcessRunning(pid)) {
-      console.log('守护进程未在运行，请先启动守护进程');
-      return;
+      // 检查 daemon 是否在运行
+      const pid = await readPidFile();
+      if (!pid || !isProcessRunning(pid)) {
+        console.log('\n注意: 守护进程未在运行，请先执行 mycc start');
+      }
+    } catch (error) {
+      // I11: 简化 ENOENT 检查
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        console.log('未找到配置文件，请先启动守护进程 (mycc start)');
+      } else {
+        console.error('读取配置文件失败:', error instanceof Error ? error.message : error);
+      }
     }
-
-    // 由于无法直接与运行中的 daemon 通信，
-    // 这里提示用户查看守护进程的输出
-    console.log('请查看守护进程的控制台输出以获取新的配对码');
-    console.log('提示: 使用 "mycc start -f" 在前台运行可以直接查看配对码');
   });
 
 program.parse();

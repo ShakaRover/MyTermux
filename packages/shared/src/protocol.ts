@@ -19,10 +19,9 @@ import type {
 
 /** 传输层消息类型 */
 export type TransportMessageType =
-  | 'register'      // 设备注册
-  | 'pairing_code'  // 配对码注册（daemon → relay）
-  | 'pair'          // 配对请求
-  | 'pair_ack'      // 配对确认
+  | 'register'      // 设备注册（daemon 携带 accessToken）
+  | 'token_auth'    // Token 认证（client 使用 accessToken 连接 daemon）
+  | 'token_ack'     // Token 认证确认
   | 'message'       // 加密消息
   | 'heartbeat'     // 心跳
   | 'error';        // 错误
@@ -44,18 +43,18 @@ export interface TransportMessage {
 /** 设备注册消息 */
 export interface RegisterMessage extends TransportMessage {
   type: 'register';
-  payload: string; // JSON: { deviceType: DeviceType, publicKey: string }
+  payload: string; // JSON: { deviceType: DeviceType, publicKey: string, accessToken?: string }
 }
 
-/** 配对请求消息 */
-export interface PairMessage extends TransportMessage {
-  type: 'pair';
-  payload: string; // JSON: { code: string, publicKey: string }
+/** Token 认证消息（client 使用 accessToken 连接指定 daemon） */
+export interface TokenAuthMessage extends TransportMessage {
+  type: 'token_auth';
+  payload: string; // JSON: { deviceType: DeviceType, publicKey: string, accessToken: string }
 }
 
-/** 配对确认消息 */
-export interface PairAckMessage extends TransportMessage {
-  type: 'pair_ack';
+/** Token 认证确认消息 */
+export interface TokenAckMessage extends TransportMessage {
+  type: 'token_ack';
   payload: string; // JSON: { success: boolean, daemonId?: string, publicKey?: string, error?: string }
 }
 
@@ -226,7 +225,7 @@ export interface AppErrorMessage extends AppMessage {
 
 /** 有效的传输层消息类型 */
 const VALID_TRANSPORT_TYPES = new Set<string>([
-  'register', 'pairing_code', 'pair', 'pair_ack', 'message', 'heartbeat', 'error'
+  'register', 'token_auth', 'token_ack', 'message', 'heartbeat', 'error'
 ]);
 
 /** 有效的应用层消息动作 */

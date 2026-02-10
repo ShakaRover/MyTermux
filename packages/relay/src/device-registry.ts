@@ -3,7 +3,7 @@
  *
  * 功能：
  * - 管理设备连接 (daemon/client)
- * - 配对码生成和验证
+ * - Access Token 注册和验证
  * - 心跳检测和自动清理
  */
 
@@ -20,30 +20,30 @@ interface DeviceConnection {
   connectedAt: number;
   /** 最后心跳时间 */
   lastHeartbeat: number;
-  /** 已配对的设备 ID（daemon 对应 client，client 对应 daemon） */
-  pairedDeviceId?: string;
+  /** 已配对的设备 ID 集合（daemon 可对应多个 client，client 仅对应一个 daemon） */
+  pairedDeviceIds: Set<string>;
   /** 设备公钥 */
   publicKey?: string;
 }
 
-/** 配对信息 */
-interface PairingEntry {
+/** Access Token 注册信息 */
+interface TokenEntry {
   /** 关联的 daemon 设备 ID */
   daemonId: string;
-  /** 创建时间戳 */
-  createdAt: number;
-  /** 过期时间戳 */
-  expiresAt: number;
+  /** 注册时间戳 */
+  registeredAt: number;
+  /** daemon 断开时间戳（用于延迟清理，undefined 表示 daemon 在线） */
+  disconnectedAt?: number;
 }
-
-/** 配对码过期时间（5 分钟） */
-const PAIRING_CODE_EXPIRY_MS = 5 * 60 * 1000;
 
 /** 心跳超时时间（30 秒） */
 const HEARTBEAT_TIMEOUT_MS = 30 * 1000;
 
 /** 清理检查间隔（10 秒） */
 const CLEANUP_INTERVAL_MS = 10 * 1000;
+
+/** Daemon 断开后 Access Token 保留时间（60 秒，支持短暂断线重连） */
+const TOKEN_GRACE_PERIOD_MS = 60 * 1000;
 
 /**
  * 设备注册管理器
@@ -52,8 +52,8 @@ export class DeviceRegistry {
   /** 设备 ID → 连接信息 */
   private devices: Map<string, DeviceConnection> = new Map();
 
-  /** 配对码 → 配对信息 */
-  private pairingCodes: Map<string, PairingEntry> = new Map();
+  /** Access Token → Token 注册信息 */
+  private accessTokens: Map<string, TokenEntry> = new Map();
 
   /** 清理定时器 */
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
@@ -68,12 +68,14 @@ export class DeviceRegistry {
    * @param deviceId 设备唯一标识
    * @param deviceType 设备类型
    * @param publicKey 设备公钥（可选）
+   * @param accessToken daemon 的 Access Token（可选，仅 daemon 提供）
    */
   registerDevice(
     ws: WebSocket,
     deviceId: string,
     deviceType: DeviceType,
-    publicKey?: string
+    publicKey?: string,
+    accessToken?: string
   ): void {
     // 如果设备已存在，先断开旧连接
     const existing = this.devices.get(deviceId);
@@ -88,11 +90,27 @@ export class DeviceRegistry {
       deviceType,
       connectedAt: now,
       lastHeartbeat: now,
+      pairedDeviceIds: new Set(),
+      // S1: 保留条件展开以兼容 exactOptionalPropertyTypes（publicKey 为 undefined 时不赋值）
+      ...(publicKey !== undefined && { publicKey }),
     };
-    if (publicKey !== undefined) {
-      device.publicKey = publicKey;
-    }
     this.devices.set(deviceId, device);
+
+    // I10: 合并两个 daemon 类型检查为一个代码块
+    if (deviceType === 'daemon') {
+      // 如果携带 accessToken，注册 Token
+      if (accessToken) {
+        this.registerAccessToken(deviceId, accessToken);
+      }
+
+      // 如果是 daemon 重连，清除其 Token 的待清理标记
+      for (const [, entry] of this.accessTokens.entries()) {
+        if (entry.daemonId === deviceId && entry.disconnectedAt) {
+          delete entry.disconnectedAt;
+          console.log(`[DeviceRegistry] daemon 重连，取消 Token 待清理标记: ${deviceId}`);
+        }
+      }
+    }
 
     console.log(`[DeviceRegistry] 设备已注册: ${deviceId} (${deviceType})`);
   }
@@ -109,6 +127,8 @@ export class DeviceRegistry {
   /**
    * 注销设备
    * @param deviceId 设备 ID
+   *
+   * 注意：设备断开时不清除对方的配对关系，以支持断线重连。
    */
   unregisterDevice(deviceId: string): void {
     const device = this.devices.get(deviceId);
@@ -116,20 +136,13 @@ export class DeviceRegistry {
       return;
     }
 
-    // 如果有配对设备，清除对方的配对关系
-    if (device.pairedDeviceId) {
-      const pairedDevice = this.devices.get(device.pairedDeviceId);
-      if (pairedDevice) {
-        delete pairedDevice.pairedDeviceId;
-      }
-    }
-
-    // 如果是 daemon，清理其配对码
+    // 如果是 daemon，标记其 Access Token 为待清理（延迟删除以支持断线重连）
     if (device.deviceType === 'daemon') {
-      for (const [code, entry] of this.pairingCodes.entries()) {
+      const now = Date.now();
+      for (const [, entry] of this.accessTokens.entries()) {
         if (entry.daemonId === deviceId) {
-          this.pairingCodes.delete(code);
-          console.log(`[DeviceRegistry] 配对码已清理: ${code}`);
+          entry.disconnectedAt = now;
+          console.log(`[DeviceRegistry] Access Token 已标记待清理 (daemon: ${deviceId}, 宽限期 ${TOKEN_GRACE_PERIOD_MS / 1000}s)`);
         }
       }
     }
@@ -168,92 +181,50 @@ export class DeviceRegistry {
   }
 
   /**
-   * 注册配对码（由 daemon 发起）
+   * 注册 Access Token（由 daemon 发起）
    * @param daemonId daemon 设备 ID
-   * @param code 配对码
-   * @param expiresAt 过期时间戳
+   * @param token Access Token
    */
-  registerPairingCode(daemonId: string, code: string, expiresAt: number): void {
-    // 检查 daemon 是否已注册
-    const daemon = this.devices.get(daemonId);
-    if (!daemon || daemon.deviceType !== 'daemon') {
-      throw new Error('设备未注册或非 daemon 类型');
-    }
-
-    // 清理该 daemon 的旧配对码
-    for (const [existingCode, entry] of this.pairingCodes.entries()) {
+  registerAccessToken(daemonId: string, token: string): void {
+    // 清理该 daemon 的旧 Token
+    for (const [existingToken, entry] of this.accessTokens.entries()) {
       if (entry.daemonId === daemonId) {
-        this.pairingCodes.delete(existingCode);
+        this.accessTokens.delete(existingToken);
       }
     }
 
-    this.pairingCodes.set(code, {
+    this.accessTokens.set(token, {
       daemonId,
-      createdAt: Date.now(),
-      expiresAt,
+      registeredAt: Date.now(),
     });
 
-    console.log(`[DeviceRegistry] 配对码已注册: ${code} (daemon: ${daemonId})`);
+    console.log(`[DeviceRegistry] Access Token 已注册 (daemon: ${daemonId})`);
   }
 
   /**
-   * 生成配对码
-   * @param daemonId daemon 设备 ID
-   * @returns 6 位数字配对码
-   */
-  generatePairingCode(daemonId: string): string {
-    // 检查 daemon 是否已注册
-    const daemon = this.devices.get(daemonId);
-    if (!daemon || daemon.deviceType !== 'daemon') {
-      throw new Error('设备未注册或非 daemon 类型');
-    }
-
-    // 清理该 daemon 的旧配对码
-    for (const [code, entry] of this.pairingCodes.entries()) {
-      if (entry.daemonId === daemonId) {
-        this.pairingCodes.delete(code);
-      }
-    }
-
-    // 生成 6 位随机数字
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-
-    const now = Date.now();
-    this.pairingCodes.set(code, {
-      daemonId,
-      createdAt: now,
-      expiresAt: now + PAIRING_CODE_EXPIRY_MS,
-    });
-
-    console.log(`[DeviceRegistry] 配对码已生成: ${code} (daemon: ${daemonId})`);
-    return code;
-  }
-
-  /**
-   * 验证配对码并完成配对
-   * @param code 配对码
+   * 验证 Access Token 并完成认证
+   * @param token Access Token
    * @param clientId client 设备 ID
-   * @returns 配对成功返回 daemon ID，失败返回 null
+   * @returns 认证成功返回 daemon ID，失败返回 null
    */
-  validatePairingCode(code: string, clientId: string): string | null {
-    const entry = this.pairingCodes.get(code);
+  validateAccessToken(token: string, clientId: string): string | null {
+    const entry = this.accessTokens.get(token);
 
     if (!entry) {
-      console.log(`[DeviceRegistry] 配对码不存在: ${code}`);
-      return null;
-    }
-
-    // 检查是否过期
-    if (Date.now() > entry.expiresAt) {
-      console.log(`[DeviceRegistry] 配对码已过期: ${code}`);
-      this.pairingCodes.delete(code);
+      console.log(`[DeviceRegistry] Access Token 不存在`);
       return null;
     }
 
     // 检查 client 是否已注册
     const client = this.devices.get(clientId);
-    if (!client || client.deviceType !== 'client') {
-      console.log(`[DeviceRegistry] client 未注册或类型错误: ${clientId}`);
+    if (!client) {
+      console.log(`[DeviceRegistry] client 未注册: ${clientId}`);
+      return null;
+    }
+
+    // 防御性检查：确保发起认证的是 client 而非 daemon
+    if (client.deviceType !== 'client') {
+      console.log(`[DeviceRegistry] 设备类型不匹配，预期 client，实际 ${client.deviceType}: ${clientId}`);
       return null;
     }
 
@@ -261,28 +232,24 @@ export class DeviceRegistry {
     const daemon = this.devices.get(entry.daemonId);
     if (!daemon) {
       console.log(`[DeviceRegistry] daemon 已离线: ${entry.daemonId}`);
-      this.pairingCodes.delete(code);
       return null;
     }
 
-    // 完成配对
-    daemon.pairedDeviceId = clientId;
-    client.pairedDeviceId = entry.daemonId;
+    // 完成认证（Token 不销毁，可以被多个 client 使用）
+    daemon.pairedDeviceIds.add(clientId);
+    client.pairedDeviceIds.add(entry.daemonId);
 
-    // 删除已使用的配对码
-    this.pairingCodes.delete(code);
-
-    console.log(`[DeviceRegistry] 配对成功: ${clientId} <-> ${entry.daemonId}`);
+    console.log(`[DeviceRegistry] Token 认证成功: ${clientId} <-> ${entry.daemonId}`);
     return entry.daemonId;
   }
 
   /**
-   * 获取设备的配对设备 ID
+   * 获取设备的配对设备 ID 集合
    * @param deviceId 设备 ID
-   * @returns 配对设备 ID 或 undefined
+   * @returns 配对设备 ID 集合或 undefined
    */
-  getPairedDeviceId(deviceId: string): string | undefined {
-    return this.devices.get(deviceId)?.pairedDeviceId;
+  getPairedDeviceIds(deviceId: string): Set<string> | undefined {
+    return this.devices.get(deviceId)?.pairedDeviceIds;
   }
 
   /**
@@ -293,7 +260,7 @@ export class DeviceRegistry {
    */
   arePaired(deviceId1: string, deviceId2: string): boolean {
     const device1 = this.devices.get(deviceId1);
-    return device1?.pairedDeviceId === deviceId2;
+    return device1?.pairedDeviceIds.has(deviceId2) ?? false;
   }
 
   /**
@@ -307,7 +274,7 @@ export class DeviceRegistry {
   /**
    * 获取注册统计信息
    */
-  getStats(): { daemons: number; clients: number; pairingCodes: number } {
+  getStats(): { daemons: number; clients: number; accessTokens: number } {
     let daemons = 0;
     let clients = 0;
 
@@ -322,7 +289,7 @@ export class DeviceRegistry {
     return {
       daemons,
       clients,
-      pairingCodes: this.pairingCodes.size,
+      accessTokens: this.accessTokens.size,
     };
   }
 
@@ -332,12 +299,11 @@ export class DeviceRegistry {
   private startCleanupTimer(): void {
     this.cleanupTimer = setInterval(() => {
       this.cleanupExpiredConnections();
-      this.cleanupExpiredPairingCodes();
     }, CLEANUP_INTERVAL_MS);
   }
 
   /**
-   * 清理超时连接
+   * 清理超时连接和过期 Token
    */
   private cleanupExpiredConnections(): void {
     const now = Date.now();
@@ -357,18 +323,12 @@ export class DeviceRegistry {
         this.unregisterDevice(deviceId);
       }
     }
-  }
 
-  /**
-   * 清理过期配对码
-   */
-  private cleanupExpiredPairingCodes(): void {
-    const now = Date.now();
-
-    for (const [code, entry] of this.pairingCodes.entries()) {
-      if (now > entry.expiresAt) {
-        this.pairingCodes.delete(code);
-        console.log(`[DeviceRegistry] 配对码过期已清理: ${code}`);
+    // 清理超过宽限期的 Access Token
+    for (const [token, entry] of this.accessTokens.entries()) {
+      if (entry.disconnectedAt && now - entry.disconnectedAt > TOKEN_GRACE_PERIOD_MS) {
+        this.accessTokens.delete(token);
+        console.log(`[DeviceRegistry] Access Token 宽限期已过，已清理 (daemon: ${entry.daemonId})`);
       }
     }
   }
@@ -384,13 +344,13 @@ export class DeviceRegistry {
   }
 
   /**
-   * 清空所有设备和配对码（用于测试）
+   * 清空所有设备和 Token（用于测试）
    */
   clear(): void {
     for (const device of this.devices.values()) {
       device.ws.close(1000, '服务关闭');
     }
     this.devices.clear();
-    this.pairingCodes.clear();
+    this.accessTokens.clear();
   }
 }

@@ -79,14 +79,30 @@ export class MessageRouter {
    * @returns 路由结果
    */
   broadcastToPaired(from: string, payload: string): RouteResult {
-    const pairedDeviceId = this.deviceRegistry.getPairedDeviceId(from);
+    const pairedDeviceIds = this.deviceRegistry.getPairedDeviceIds(from);
 
-    if (!pairedDeviceId) {
+    if (!pairedDeviceIds || pairedDeviceIds.size === 0) {
       console.log(`[MessageRouter] 设备未配对，无法广播: ${from}`);
       return { success: false, error: '设备未配对' };
     }
 
-    return this.routeMessage(from, pairedDeviceId, payload);
+    let lastError: string | undefined;
+    let anySuccess = false;
+
+    for (const pairedId of pairedDeviceIds) {
+      const result = this.routeMessage(from, pairedId, payload);
+      if (result.success) {
+        anySuccess = true;
+      } else {
+        lastError = result.error;
+      }
+    }
+
+    if (!anySuccess && lastError) {
+      return { success: false, error: lastError };
+    }
+
+    return { success: true };
   }
 
   /**
@@ -123,36 +139,6 @@ export class MessageRouter {
   sendError(to: string, code: string, errorMessage: string): RouteResult {
     const payload = JSON.stringify({ code, message: errorMessage });
     return this.sendSystemMessage(to, 'error', payload);
-  }
-
-  /**
-   * 发送配对确认消息
-   *
-   * @param to 接收者设备 ID
-   * @param success 配对是否成功
-   * @param daemonId 配对成功时的 daemon ID
-   * @param publicKey 配对成功时 daemon 的公钥
-   * @param error 配对失败时的错误信息
-   * @returns 路由结果
-   */
-  sendPairAck(
-    to: string,
-    success: boolean,
-    daemonId?: string,
-    publicKey?: string,
-    error?: string
-  ): RouteResult {
-    const payload: Record<string, unknown> = { success };
-    if (daemonId !== undefined) {
-      payload['daemonId'] = daemonId;
-    }
-    if (publicKey !== undefined) {
-      payload['publicKey'] = publicKey;
-    }
-    if (error !== undefined) {
-      payload['error'] = error;
-    }
-    return this.sendSystemMessage(to, 'pair_ack', JSON.stringify(payload));
   }
 
   /**
@@ -200,13 +186,15 @@ export class MessageRouter {
    * @param disconnectedDeviceId 断开连接的设备 ID
    */
   notifyPeerDisconnected(disconnectedDeviceId: string): void {
-    const pairedDeviceId = this.deviceRegistry.getPairedDeviceId(disconnectedDeviceId);
-    if (pairedDeviceId) {
-      this.sendError(
-        pairedDeviceId,
-        'PEER_DISCONNECTED',
-        `配对设备已断开连接: ${disconnectedDeviceId}`
-      );
+    const pairedDeviceIds = this.deviceRegistry.getPairedDeviceIds(disconnectedDeviceId);
+    if (pairedDeviceIds) {
+      for (const pairedId of pairedDeviceIds) {
+        this.sendError(
+          pairedId,
+          'PEER_DISCONNECTED',
+          `配对设备已断开连接: ${disconnectedDeviceId}`
+        );
+      }
     }
   }
 }

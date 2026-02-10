@@ -3,6 +3,7 @@
  *
  * 处理从 daemon 接收到的所有应用层消息
  * 这是一个单例模式，确保消息只被处理一次
+ * 处理器被注册到 connectionStore 中，供 useWebSocket 统一调用
  */
 
 import {
@@ -15,6 +16,7 @@ import {
   type PermissionRequestMessage,
 } from '@mycc/shared';
 import { useSessionsStore, type ChatMessage } from '../stores/sessionsStore';
+import { useConnectionStore } from '../stores/connectionStore';
 
 /** 消息处理器类型 */
 export type AppMessageHandler = (message: AppMessage) => void;
@@ -26,6 +28,7 @@ let isInitialized = false;
 /**
  * 初始化全局消息处理器
  * 只应该被调用一次
+ * 将处理器注册到 connectionStore 中
  */
 export function initializeGlobalMessageHandler(): void {
   if (isInitialized) {
@@ -90,14 +93,10 @@ export function initializeGlobalMessageHandler(): void {
     }
   };
 
-  isInitialized = true;
-}
+  // 将处理器注册到 connectionStore 中
+  useConnectionStore.getState().setAppMessageHandler(globalHandler);
 
-/**
- * 获取全局消息处理器
- */
-export function getGlobalMessageHandler(): AppMessageHandler | null {
-  return globalHandler;
+  isInitialized = true;
 }
 
 /**
@@ -106,4 +105,6 @@ export function getGlobalMessageHandler(): AppMessageHandler | null {
 export function resetGlobalMessageHandler(): void {
   globalHandler = null;
   isInitialized = false;
+  // 同步清除 store 中的引用，避免悬空回调
+  useConnectionStore.getState().setAppMessageHandler(null);
 }

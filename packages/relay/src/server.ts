@@ -37,7 +37,7 @@ export function createServer(options: ServerOptions = {}) {
       status: 'ok',
       timestamp: Date.now(),
       version: '0.1.0',
-      connections: stats ?? { daemons: 0, clients: 0, pairingCodes: 0 },
+      connections: stats ?? { daemons: 0, clients: 0, accessTokens: 0 },
     });
   });
 

@@ -17,18 +17,16 @@ import type { MessageRouter } from './message-router';
 interface RegisterPayload {
   deviceType: DeviceType;
   publicKey: string;
+  /** daemon 注册时携带的 Access Token */
+  accessToken?: string;
 }
 
-/** 配对码注册消息载荷 */
-interface PairingCodePayload {
-  code: string;
-  expiresAt: number;
-}
-
-/** 配对消息载荷 */
-interface PairPayload {
-  code: string;
+/** Token 认证消息载荷 */
+interface TokenAuthPayload {
+  deviceType: DeviceType;
   publicKey: string;
+  /** Access Token（用于客户端认证连接 daemon） */
+  accessToken: string;
 }
 
 /**
@@ -99,11 +97,8 @@ export class WebSocketHandler {
       case 'register':
         this.handleRegister(ws, message);
         break;
-      case 'pairing_code':
-        this.handlePairingCode(ws, message);
-        break;
-      case 'pair':
-        this.handlePair(ws, message);
+      case 'token_auth':
+        this.handleTokenAuth(ws, message);
         break;
       case 'heartbeat':
         this.handleHeartbeat(ws, message);
@@ -119,6 +114,7 @@ export class WebSocketHandler {
 
   /**
    * 处理设备注册
+   * daemon 注册时可携带 accessToken
    *
    * @param ws WebSocket 连接
    * @param message 注册消息
@@ -147,8 +143,14 @@ export class WebSocketHandler {
       this.deviceRegistry.unregisterDevice(existingDeviceId);
     }
 
-    // 注册设备（包含公钥）
-    this.deviceRegistry.registerDevice(ws, deviceId, payload.deviceType, payload.publicKey);
+    // 注册设备（包含公钥和可选的 accessToken）
+    this.deviceRegistry.registerDevice(
+      ws,
+      deviceId,
+      payload.deviceType,
+      payload.publicKey,
+      payload.accessToken
+    );
     this.wsToDeviceId.set(ws, deviceId);
 
     // 发送注册成功确认
@@ -160,94 +162,83 @@ export class WebSocketHandler {
   }
 
   /**
-   * 处理配对码注册（daemon → relay）
+   * 处理 Token 认证（客户端使用 Access Token 连接 daemon）
    *
    * @param ws WebSocket 连接
-   * @param message 配对码消息
+   * @param message Token 认证消息
    */
-  private handlePairingCode(ws: WebSocket, message: TransportMessage): void {
-    let payload: PairingCodePayload;
+  private handleTokenAuth(ws: WebSocket, message: TransportMessage): void {
+    let payload: TokenAuthPayload;
 
     try {
-      payload = JSON.parse(message.payload) as PairingCodePayload;
+      payload = JSON.parse(message.payload) as TokenAuthPayload;
     } catch {
-      this.sendError(ws, 'INVALID_PAYLOAD', '配对码消息载荷格式错误');
+      this.sendError(ws, 'INVALID_PAYLOAD', 'Token 认证消息载荷格式错误');
+      // I9: payload 解析失败意味着客户端发送了无效数据，关闭连接避免资源占用
+      ws.close(4000, 'Token 认证消息载荷格式错误');
       return;
     }
 
-    const daemonId = message.from;
-
-    // 验证 daemon 是否已注册
-    const device = this.deviceRegistry.getDevice(daemonId);
-    if (!device || device.deviceType !== 'daemon') {
-      this.sendError(ws, 'NOT_DAEMON', '只有 daemon 可以注册配对码');
-      return;
-    }
-
-    // 注册配对码
-    try {
-      this.deviceRegistry.registerPairingCode(
-        daemonId,
-        payload.code,
-        payload.expiresAt
-      );
-
-      // 发送确认
-      const ackPayload = JSON.stringify({ success: true, code: payload.code });
-      const ack = createTransportMessage('pairing_code', 'relay', ackPayload, daemonId);
-      ws.send(JSON.stringify(ack));
-
-      console.log(`[WebSocketHandler] 配对码已注册: ${payload.code} (daemon: ${daemonId})`);
-    } catch (error) {
-      this.sendError(
-        ws,
-        'PAIRING_CODE_FAILED',
-        error instanceof Error ? error.message : '配对码注册失败'
-      );
-    }
-  }
-
-  /**
-   * 处理配对请求
-   *
-   * @param ws WebSocket 连接
-   * @param message 配对消息
-   */
-  private handlePair(ws: WebSocket, message: TransportMessage): void {
-    let payload: PairPayload;
-
-    try {
-      payload = JSON.parse(message.payload) as PairPayload;
-    } catch {
-      this.sendError(ws, 'INVALID_PAYLOAD', '配对消息载荷格式错误');
+    // 校验 deviceType：token_auth 仅限 client 使用
+    if (payload.deviceType !== 'client') {
+      this.sendError(ws, 'INVALID_DEVICE_TYPE', 'Token 认证仅限客户端使用');
       return;
     }
 
     const clientId = message.from;
 
-    // 验证配对码并完成配对
-    const daemonId = this.deviceRegistry.validatePairingCode(payload.code, clientId);
+    // 检查是否已有连接使用相同 WebSocket
+    const existingDeviceId = this.wsToDeviceId.get(ws);
+    if (existingDeviceId && existingDeviceId !== clientId) {
+      console.warn(`[WebSocketHandler] WebSocket 重复注册: ${existingDeviceId} -> ${clientId}`);
+      this.deviceRegistry.unregisterDevice(existingDeviceId);
+    }
+
+    // 先注册客户端设备
+    this.deviceRegistry.registerDevice(ws, clientId, payload.deviceType, payload.publicKey);
+    this.wsToDeviceId.set(ws, clientId);
+
+    // 使用 Access Token 验证并建立配对
+    const daemonId = this.deviceRegistry.validateAccessToken(payload.accessToken, clientId);
 
     if (daemonId) {
       // 获取 daemon 的公钥
       const daemonPublicKey = this.deviceRegistry.getPublicKey(daemonId);
 
-      // 配对成功，通知 client（包含 daemon 公钥）
-      this.messageRouter.sendPairAck(clientId, true, daemonId, daemonPublicKey);
+      // 发送认证成功响应给 client
+      const clientAckPayload = JSON.stringify({
+        success: true,
+        daemonId,
+        publicKey: daemonPublicKey,
+      });
+      const clientAck = createTransportMessage('token_ack', 'relay', clientAckPayload, clientId);
+      ws.send(JSON.stringify(clientAck));
 
-      // 通知 daemon 配对成功（包含 client 公钥）
+      // 通知 daemon 客户端已认证
       const daemonPayload = JSON.stringify({
         success: true,
         clientId,
         publicKey: payload.publicKey,
       });
-      this.messageRouter.sendSystemMessage(daemonId, 'pair_ack', daemonPayload);
+      this.messageRouter.sendSystemMessage(daemonId, 'token_ack', daemonPayload);
 
-      console.log(`[WebSocketHandler] 配对成功: ${clientId} <-> ${daemonId}`);
+      console.log(`[WebSocketHandler] Token 认证成功: ${clientId} <-> ${daemonId}`);
     } else {
-      // 配对失败
-      this.messageRouter.sendPairAck(clientId, false, undefined, undefined, '配对码无效或已过期');
-      console.log(`[WebSocketHandler] 配对失败: ${clientId}`);
+      // Token 认证失败，清理已注册但未认证的设备
+      this.deviceRegistry.unregisterDevice(clientId);
+      this.wsToDeviceId.delete(ws);
+
+      const ackPayload = JSON.stringify({
+        success: false,
+        error: 'Access Token 无效或 Daemon 未连接',
+      });
+      const ack = createTransportMessage('token_ack', 'relay', ackPayload, clientId);
+      ws.send(JSON.stringify(ack));
+
+      // 认证失败后关闭连接，避免未认证的 WebSocket 持续占用资源
+      ws.close(4001, 'Token 认证失败');
+
+      console.log(`[WebSocketHandler] Token 认证失败: ${clientId}`);
     }
   }
 

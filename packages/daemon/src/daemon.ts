@@ -15,7 +15,6 @@ import type {
   SessionResizeMessage,
   PermissionRespondMessage,
   PermissionRequest,
-  // SessionListMessage 未使用因为 handleSessionList 不需要消息参数
 } from '@mycc/shared';
 import {
   createTransportMessage,
@@ -49,8 +48,8 @@ export interface DaemonEvents {
   disconnected: () => void;
   /** 发生错误 */
   error: (error: Error) => void;
-  /** 配对码已生成 */
-  pairingCode: (code: string, expiresAt: number) => void;
+  /** Access Token 可用 */
+  accessToken: (token: string) => void;
 }
 
 // ============================================================================
@@ -74,7 +73,7 @@ export class Daemon extends EventEmitter {
   private wsClient: WsClient | null = null;
   /** 会话管理器 */
   private readonly sessionManager: SessionManager;
-  /** 配对管理器 */
+  /** 认证管理器 */
   private readonly pairingManager: PairingManager;
   /** 运行状态 */
   private _isRunning = false;
@@ -98,7 +97,7 @@ export class Daemon extends EventEmitter {
       throw new Error('Daemon 已在运行');
     }
 
-    // 初始化配对管理器
+    // 初始化认证管理器
     await this.pairingManager.initialize();
 
     // 创建 WebSocket 客户端
@@ -112,6 +111,7 @@ export class Daemon extends EventEmitter {
       deviceType: 'daemon',
       deviceId: this.pairingManager.deviceId,
       publicKey: this.pairingManager.publicKey,
+      accessToken: this.pairingManager.accessToken,
     });
 
     // 设置事件监听
@@ -148,12 +148,19 @@ export class Daemon extends EventEmitter {
   }
 
   /**
-   * 生成新的配对码
-   * @returns 配对码和过期时间
+   * 获取 Access Token
+   * @returns Access Token
    */
-  generatePairingCode(): { code: string; expiresAt: number } {
-    const info = this.pairingManager.generateNewPairingCode();
-    return { code: info.code, expiresAt: info.expiresAt };
+  getAccessToken(): string {
+    return this.pairingManager.accessToken;
+  }
+
+  /**
+   * 重新生成 Access Token
+   * @returns 新的 Access Token
+   */
+  async regenerateToken(): Promise<string> {
+    return this.pairingManager.regenerateToken();
   }
 
   /**
@@ -164,14 +171,14 @@ export class Daemon extends EventEmitter {
     isConnected: boolean;
     deviceId: string;
     sessionCount: number;
-    pairedClientsCount: number;
+    authenticatedClientsCount: number;
   } {
     return {
       isRunning: this._isRunning,
       isConnected: this.wsClient?.isConnected ?? false,
       deviceId: this.pairingManager.deviceId,
       sessionCount: this.sessionManager.sessionCount,
-      pairedClientsCount: this.pairingManager.getPairedClients().length,
+      authenticatedClientsCount: this.pairingManager.getPairedClients().length,
     };
   }
 
@@ -185,6 +192,13 @@ export class Daemon extends EventEmitter {
   // --------------------------------------------------------------------------
   // 私有方法 - 事件设置
   // --------------------------------------------------------------------------
+
+  /**
+   * 将未知错误转为 Error 对象
+   */
+  private toError(error: unknown): Error {
+    return error instanceof Error ? error : new Error(String(error));
+  }
 
   /**
    * 设置 WebSocket 客户端监听器
@@ -202,7 +216,7 @@ export class Daemon extends EventEmitter {
 
     this.wsClient.on('message', (message: TransportMessage) => {
       this.handleTransportMessage(message).catch((error: unknown) => {
-        this.emit('error', error instanceof Error ? error : new Error(String(error)));
+        this.emit('error', this.toError(error));
       });
     });
 
@@ -221,19 +235,19 @@ export class Daemon extends EventEmitter {
   private setupSessionManagerListeners(): void {
     this.sessionManager.on('sessionOutput', (sessionId: string, data: string) => {
       this.broadcastSessionOutput(sessionId, data).catch((error: unknown) => {
-        this.emit('error', error instanceof Error ? error : new Error(String(error)));
+        this.emit('error', this.toError(error));
       });
     });
 
     this.sessionManager.on('sessionClosed', (sessionId: string, reason?: string) => {
       this.broadcastSessionClosed(sessionId, reason).catch((error: unknown) => {
-        this.emit('error', error instanceof Error ? error : new Error(String(error)));
+        this.emit('error', this.toError(error));
       });
     });
 
     this.sessionManager.on('permissionRequest', (request) => {
       this.broadcastPermissionRequest(request).catch((error: unknown) => {
-        this.emit('error', error instanceof Error ? error : new Error(String(error)));
+        this.emit('error', this.toError(error));
       });
     });
 
@@ -243,36 +257,16 @@ export class Daemon extends EventEmitter {
   }
 
   /**
-   * 设置配对管理器监听器
+   * 设置认证管理器监听器
    */
   private setupPairingManagerListeners(): void {
-    this.pairingManager.on('pairingCodeGenerated', (info) => {
-      // 向 Relay 注册配对码
-      this.registerPairingCodeWithRelay(info.code, info.expiresAt);
-      this.emit('pairingCode', info.code, info.expiresAt);
+    this.pairingManager.on('clientAuthenticated', (client) => {
+      console.log(`客户端认证成功: ${client.clientId}`);
     });
 
-    this.pairingManager.on('pairingSuccess', (client) => {
-      console.log(`配对成功: ${client.clientId}`);
+    this.pairingManager.on('tokenGenerated', (token) => {
+      this.emit('accessToken', token);
     });
-
-    this.pairingManager.on('pairingExpired', () => {
-      console.log('配对码已过期');
-    });
-  }
-
-  /**
-   * 向 Relay 注册配对码
-   */
-  private registerPairingCodeWithRelay(code: string, expiresAt: number): void {
-    if (!this.wsClient || !this.wsClient.isConnected) {
-      console.warn('WebSocket 未连接，无法注册配对码');
-      return;
-    }
-
-    const payload = JSON.stringify({ code, expiresAt });
-    this.wsClient.send('pairing_code', payload);
-    console.log(`已向 Relay 注册配对码: ${code}`);
   }
 
   // --------------------------------------------------------------------------
@@ -287,14 +281,8 @@ export class Daemon extends EventEmitter {
       case 'register':
         // 忽略注册确认消息
         break;
-      case 'pairing_code':
-        // 忽略配对码注册确认消息
-        break;
-      case 'pair':
-        await this.handlePairMessage(message);
-        break;
-      case 'pair_ack':
-        await this.handlePairAckMessage(message);
+      case 'token_ack':
+        await this.handleTokenAckMessage(message);
         break;
       case 'message':
         await this.handleEncryptedMessage(message);
@@ -311,9 +299,9 @@ export class Daemon extends EventEmitter {
   }
 
   /**
-   * 处理来自 Relay 的配对确认（Relay 已验证配对码成功）
+   * 处理令牌认证确认（客户端通过 Token 连接）
    */
-  private async handlePairAckMessage(message: TransportMessage): Promise<void> {
+  private async handleTokenAckMessage(message: TransportMessage): Promise<void> {
     try {
       const payload = JSON.parse(message.payload) as {
         success: boolean;
@@ -323,74 +311,42 @@ export class Daemon extends EventEmitter {
       };
 
       if (!payload.success) {
-        console.warn(`配对失败: ${payload.error ?? '未知错误'}`);
+        // I6: 认证失败也 emit error 事件，让上层（如 CLI）能感知并报告
+        const errorMsg = `客户端认证失败: ${payload.error ?? '未知错误'}`;
+        console.warn(errorMsg);
+        this.emit('error', new Error(errorMsg));
         return;
       }
 
       if (!payload.clientId || !payload.publicKey) {
-        console.warn('配对确认消息缺少必要字段');
+        console.warn('认证确认消息缺少必要字段');
         return;
       }
 
-      // 完成本地配对
-      await this.pairingManager.completePairing(
-        payload.clientId,
-        payload.publicKey
-      );
-
-      console.log(`配对成功: ${payload.clientId}`);
-    } catch (error) {
-      this.emit('error', error instanceof Error ? error : new Error(String(error)));
-    }
-  }
-
-  /**
-   * 处理配对请求
-   */
-  private async handlePairMessage(message: TransportMessage): Promise<void> {
-    if (!this.wsClient) return;
-
-    try {
-      const payload = JSON.parse(message.payload) as {
-        code: string;
-        publicKey: string;
-        name?: string;
-      };
-
-      // 验证配对码
-      if (!this.pairingManager.validatePairingCode(payload.code)) {
-        // 发送配对失败响应
-        const response = createTransportMessage(
-          'pair_ack',
-          this.pairingManager.deviceId,
-          JSON.stringify({ success: false, error: '配对码无效或已过期' }),
-          message.from
+      if (this.pairingManager.isPaired(payload.clientId)) {
+        // I2: 已认证的客户端重连，更新公钥
+        // 安全说明：此消息由中继服务器在验证 Access Token 后转发。
+        // 公钥更新的安全性依赖于以下信任链：
+        // 1. 中继服务器验证了客户端持有的 Access Token
+        // 2. Access Token 由 daemon 生成并仅通过可信渠道分发
+        // 3. 中继服务器本身是可信的（与首次认证的信任假设一致）
+        // 注意：如果中继服务器被攻陷，攻击者可伪造公钥实施 MITM
+        console.log(`客户端重连，公钥更新: ${payload.clientId}`);
+        await this.pairingManager.updateClientPublicKey(
+          payload.clientId,
+          payload.publicKey
         );
-        this.wsClient.sendMessage(response);
-        return;
+        console.log(`客户端重连成功: ${payload.clientId}`);
+      } else {
+        // 新客户端通过 Token 认证
+        await this.pairingManager.completePairing(
+          payload.clientId,
+          payload.publicKey
+        );
+        console.log(`新客户端认证成功: ${payload.clientId}`);
       }
-
-      // 完成配对
-      await this.pairingManager.completePairing(
-        message.from,
-        payload.publicKey,
-        payload.name
-      );
-
-      // 发送配对成功响应
-      const response = createTransportMessage(
-        'pair_ack',
-        this.pairingManager.deviceId,
-        JSON.stringify({
-          success: true,
-          daemonId: this.pairingManager.deviceId,
-          publicKey: this.pairingManager.publicKey,
-        }),
-        message.from
-      );
-      this.wsClient.sendMessage(response);
     } catch (error) {
-      this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      this.emit('error', this.toError(error));
     }
   }
 
@@ -398,9 +354,9 @@ export class Daemon extends EventEmitter {
    * 处理加密消息
    */
   private async handleEncryptedMessage(message: TransportMessage): Promise<void> {
-    // 检查是否已配对
+    // 检查客户端是否已认证
     if (!this.pairingManager.isPaired(message.from)) {
-      console.warn(`收到未配对客户端的消息: ${message.from}`);
+      console.warn(`收到未认证客户端的消息: ${message.from}`);
       return;
     }
 
@@ -417,7 +373,7 @@ export class Daemon extends EventEmitter {
       // 处理应用层消息
       await this.handleAppMessage(message.from, appMessage);
     } catch (error) {
-      this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      this.emit('error', this.toError(error));
     }
   }
 
@@ -475,7 +431,7 @@ export class Daemon extends EventEmitter {
         action: 'error',
         messageId: generateMessageId(),
         code: 'SESSION_CREATE_FAILED',
-        message: error instanceof Error ? error.message : String(error),
+        message: this.toError(error).message,
         relatedMessageId: message.messageId,
       });
     }
@@ -521,7 +477,7 @@ export class Daemon extends EventEmitter {
     try {
       this.sessionManager.sendInput(message.sessionId, message.data);
     } catch (error) {
-      this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      this.emit('error', this.toError(error));
     }
   }
 
@@ -536,7 +492,7 @@ export class Daemon extends EventEmitter {
         message.rows
       );
     } catch (error) {
-      this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      this.emit('error', this.toError(error));
     }
   }
 
@@ -550,7 +506,7 @@ export class Daemon extends EventEmitter {
         message.approved
       );
     } catch (error) {
-      this.emit('error', error instanceof Error ? error : new Error(String(error)));
+      this.emit('error', this.toError(error));
     }
   }
 
@@ -563,6 +519,14 @@ export class Daemon extends EventEmitter {
         code: string;
         message: string;
       };
+
+      // C5: 临时性错误也用 console.warn 记录，便于调试；不触发 error 事件以避免干扰正常流程
+      const transientErrorCodes = ['ROUTE_FAILED', 'PEER_DISCONNECTED'];
+      if (transientErrorCodes.includes(payload.code)) {
+        console.warn(`[Transient] [${payload.code}] ${payload.message}`);
+        return;
+      }
+
       this.emit('error', new Error(`[${payload.code}] ${payload.message}`));
     } catch {
       this.emit('error', new Error(`收到错误消息: ${message.payload}`));
@@ -600,7 +564,7 @@ export class Daemon extends EventEmitter {
   }
 
   /**
-   * 广播会话输出到所有已配对客户端
+   * 广播会话输出到所有已认证客户端
    */
   private async broadcastSessionOutput(
     sessionId: string,
@@ -623,15 +587,12 @@ export class Daemon extends EventEmitter {
     sessionId: string,
     reason?: string
   ): Promise<void> {
-    const message: Record<string, unknown> = {
-      action: 'session:closed',
+    const message = {
+      action: 'session:closed' as const,
       messageId: generateMessageId(),
       sessionId,
+      ...(reason !== undefined && { reason }),
     };
-
-    if (reason !== undefined) {
-      message['reason'] = reason;
-    }
 
     await this.broadcastToAllClients(message);
   }
@@ -652,7 +613,7 @@ export class Daemon extends EventEmitter {
   }
 
   /**
-   * 广播消息到所有已配对客户端
+   * 广播消息到所有已认证客户端
    */
   private async broadcastToAllClients(
     message: Record<string, unknown>

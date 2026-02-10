@@ -19,7 +19,7 @@ import {
 import { useSessionsStore, type ChatMessage } from '../stores/sessionsStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWebSocket } from './useWebSocket';
-import { initializeGlobalMessageHandler, getGlobalMessageHandler } from './globalMessageHandler';
+import { initializeGlobalMessageHandler } from './globalMessageHandler';
 
 /** 会话 Hook 返回值 */
 export interface UseSessionsReturn {
@@ -60,11 +60,8 @@ export function useSessions(): UseSessionsReturn {
     }
   }, []);
 
-  // 使用全局消息处理器
-  const handler = getGlobalMessageHandler();
-  const { send } = useWebSocket(
-    handler ? { onAppMessage: handler } : {}
-  );
+  // 使用 WebSocket hook（全局消息处理器已注册到 store 中）
+  const { send } = useWebSocket();
 
   /**
    * 检查连接状态

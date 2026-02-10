@@ -94,18 +94,8 @@ export interface DeviceInfo {
 }
 
 // ============================================================================
-// 配对相关
+// 认证相关
 // ============================================================================
 
-/** 配对状态 */
-export type PairingStatus = 'pending' | 'completed' | 'expired' | 'failed';
-
-/** 配对信息 */
-export interface PairingInfo {
-  /** 配对码 (6位数字) */
-  code: string;
-  /** 过期时间戳 */
-  expiresAt: number;
-  /** 配对状态 */
-  status: PairingStatus;
-}
+/** 认证状态 */
+export type AuthStatus = 'pending' | 'authenticated' | 'failed';

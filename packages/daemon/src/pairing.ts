@@ -1,16 +1,17 @@
 /**
- * 配对逻辑
+ * 认证管理器
  *
- * 处理 daemon 与 client 之间的配对流程，管理密钥存储
+ * 管理 daemon 的 Access Token 和已认证客户端，处理密钥存储
+ * Token 模式：daemon 启动时生成 Access Token，客户端使用 Token 连接
  */
 
 import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import type { PairingInfo, KeyPair } from '@mycc/shared';
+import type { KeyPair } from '@mycc/shared';
 import {
-  generatePairingCode,
+  generateAccessToken,
   generateKeyPair,
   deriveSharedSecret,
 } from '@mycc/shared';
@@ -19,77 +20,117 @@ import {
 // 类型定义
 // ============================================================================
 
-/** 已配对的客户端信息 */
-export interface PairedClient {
+/** 已认证的客户端信息 */
+export interface AuthenticatedClient {
   /** 客户端设备 ID */
   clientId: string;
   /** 客户端公钥 */
   publicKey: string;
-  /** 配对时间戳 */
-  pairedAt: number;
+  /** 认证时间戳 */
+  authenticatedAt: number;
   /** 设备名称 */
   name?: string;
 }
 
-/** 持久化的配对数据 */
-interface PairingData {
+/** 持久化的认证数据 */
+interface AuthData {
   /** Daemon 设备 ID */
   deviceId: string;
+  /** Access Token（客户端使用此 Token 连接） */
+  accessToken: string;
   /** 本地公钥 */
   publicKey: string;
   /** 本地私钥（导出格式） */
   privateKeyJwk: JsonWebKey;
-  /** 已配对的客户端列表 */
-  pairedClients: PairedClient[];
+  /** 已认证的客户端列表 */
+  authenticatedClients: AuthenticatedClient[];
 }
 
-/** 配对管理器事件 */
+/** 认证管理器事件 */
 export interface PairingManagerEvents {
-  /** 配对码已生成 */
-  pairingCodeGenerated: (info: PairingInfo) => void;
-  /** 配对成功 */
-  pairingSuccess: (client: PairedClient) => void;
-  /** 配对失败 */
-  pairingFailed: (error: string) => void;
-  /** 配对码过期 */
-  pairingExpired: () => void;
+  /** Token 已生成 */
+  tokenGenerated: (token: string) => void;
+  /** 客户端认证成功 */
+  clientAuthenticated: (client: AuthenticatedClient) => void;
 }
 
 // ============================================================================
 // 常量定义
 // ============================================================================
 
-/** 配对码有效期（毫秒） */
-const PAIRING_CODE_TTL = 5 * 60 * 1000; // 5 分钟
-
 /** 配置文件目录 */
 const CONFIG_DIR = path.join(os.homedir(), '.mycc');
 
-/** 配对数据文件路径 */
-const PAIRING_DATA_FILE = path.join(CONFIG_DIR, 'pairing.json');
+/** 认证数据文件路径 */
+const AUTH_DATA_FILE = path.join(CONFIG_DIR, 'pairing.json');
 
 // ============================================================================
-// 配对管理器类
+// 导出工具函数
 // ============================================================================
 
 /**
- * 配对管理器
+ * I12: 读取并返回 Access Token（供 CLI token 命令使用）
+ *
+ * 封装了文件读取、JSON 解析和旧版数据迁移逻辑，
+ * 避免在 index.ts 中重复迁移代码
+ *
+ * @returns { token, migrated } token 为 Access Token，migrated 表示是否进行了数据迁移
+ * @throws 文件不存在时抛出 ENOENT 错误
+ */
+export async function readAccessToken(): Promise<{ token: string; migrated: boolean }> {
+  const content = await fs.readFile(AUTH_DATA_FILE, 'utf-8');
+  const data = JSON.parse(content) as Record<string, unknown>;
+
+  let migrated = false;
+
+  // 兼容旧版：补充 accessToken
+  if (!data.accessToken) {
+    const { generateAccessToken } = await import('@mycc/shared');
+    data.accessToken = generateAccessToken();
+    migrated = true;
+  }
+
+  // 兼容旧版字段名
+  if (!data.authenticatedClients && data.pairedClients) {
+    data.authenticatedClients = data.pairedClients;
+    delete data.pairedClients;
+    migrated = true;
+  }
+
+  // 如果进行了迁移，写回文件
+  if (migrated) {
+    await fs.writeFile(AUTH_DATA_FILE, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  }
+
+  return { token: data.accessToken as string, migrated };
+}
+
+// ============================================================================
+// 认证管理器类
+// ============================================================================
+
+/**
+ * 认证管理器
+ *
+ * 历史兼容：类名保留为 PairingManager（原为配对管理器），
+ * 避免外部引用（如 daemon.ts、ws-client.ts、测试文件）需要同步重命名。
+ * 实际功能已迁移为 Access Token 认证模式：
+ * - 方法名 completePairing/isPaired/getPairedClients 等保留旧命名
+ * - 数据文件名 pairing.json 保留，确保版本升级时无需用户干预
  *
  * 特性：
- * - 生成和管理配对码
- * - 处理配对流程
+ * - 生成和管理 Access Token
+ * - 处理客户端认证
  * - 管理密钥存储
  * - 派生共享密钥用于 E2E 加密
  */
 export class PairingManager extends EventEmitter {
-  /** 当前配对信息 */
-  private currentPairing: PairingInfo | null = null;
-  /** 配对码过期定时器 */
-  private expiryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Access Token */
+  private _accessToken: string = '';
   /** 本地密钥对 */
   private keyPair: KeyPair | null = null;
-  /** 已配对的客户端 */
-  private pairedClients: PairedClient[] = [];
+  /** 已认证的客户端 */
+  private authenticatedClients: AuthenticatedClient[] = [];
   /** 设备 ID */
   private _deviceId: string = '';
   /** 共享密钥缓存 */
@@ -104,18 +145,19 @@ export class PairingManager extends EventEmitter {
   // --------------------------------------------------------------------------
 
   /**
-   * 初始化配对管理器
-   * 加载或生成密钥对和设备 ID
+   * 初始化认证管理器
+   * 加载或生成密钥对、设备 ID 和 Access Token
    */
   async initialize(): Promise<void> {
     await this.ensureConfigDir();
 
-    const existingData = await this.loadPairingData();
+    const existingData = await this.loadAuthData();
 
     if (existingData) {
-      // 恢复现有密钥
+      // 恢复现有数据
       this._deviceId = existingData.deviceId;
-      this.pairedClients = existingData.pairedClients;
+      this._accessToken = existingData.accessToken;
+      this.authenticatedClients = existingData.authenticatedClients;
 
       // 从 JWK 导入私钥
       const privateKey = await crypto.subtle.importKey(
@@ -133,66 +175,44 @@ export class PairingManager extends EventEmitter {
         publicKey: existingData.publicKey,
         privateKey,
       };
+
+      // 如果 loadAuthData 进行了旧版数据迁移（如补充 accessToken、重命名字段），
+      // 将迁移结果持久化回磁盘，避免每次启动重复迁移
+      await this.saveAuthData();
     } else {
-      // 生成新密钥和设备 ID
+      // 生成新数据
       this._deviceId = this.generateDeviceId();
+      this._accessToken = generateAccessToken();
       this.keyPair = await generateKeyPair();
-      this.pairedClients = [];
+      this.authenticatedClients = [];
 
-      await this.savePairingData();
+      await this.saveAuthData();
     }
   }
 
   /**
-   * 生成新的配对码
-   * @returns 配对信息
+   * 获取 Access Token
    */
-  generateNewPairingCode(): PairingInfo {
-    // 清除旧的配对状态
-    this.clearPairingState();
-
-    const code = generatePairingCode();
-    const expiresAt = Date.now() + PAIRING_CODE_TTL;
-
-    this.currentPairing = {
-      code,
-      expiresAt,
-      status: 'pending',
-    };
-
-    // 设置过期定时器
-    this.expiryTimer = setTimeout(() => {
-      this.handlePairingExpiry();
-    }, PAIRING_CODE_TTL);
-
-    this.emit('pairingCodeGenerated', this.currentPairing);
-    return this.currentPairing;
+  get accessToken(): string {
+    return this._accessToken;
   }
 
   /**
-   * 验证配对码
-   * @param code 配对码
-   * @returns 是否有效
+   * 重新生成 Access Token
+   * @returns 新的 Access Token
    */
-  validatePairingCode(code: string): boolean {
-    if (!this.currentPairing) {
-      return false;
-    }
-
-    if (this.currentPairing.status !== 'pending') {
-      return false;
-    }
-
-    if (Date.now() > this.currentPairing.expiresAt) {
-      this.handlePairingExpiry();
-      return false;
-    }
-
-    return this.currentPairing.code === code;
+  async regenerateToken(): Promise<string> {
+    this._accessToken = generateAccessToken();
+    // 清除所有已认证客户端（Token 变了，旧客户端需要重新认证）
+    this.authenticatedClients = [];
+    this.sharedKeyCache.clear();
+    await this.saveAuthData();
+    this.emit('tokenGenerated', this._accessToken);
+    return this._accessToken;
   }
 
   /**
-   * 完成配对
+   * 完成客户端认证
    * @param clientId 客户端设备 ID
    * @param clientPublicKey 客户端公钥
    * @param clientName 客户端名称（可选）
@@ -202,19 +222,15 @@ export class PairingManager extends EventEmitter {
     clientPublicKey: string,
     clientName?: string
   ): Promise<void> {
-    if (!this.currentPairing || this.currentPairing.status !== 'pending') {
-      throw new Error('没有待处理的配对请求');
-    }
-
-    // 检查是否已配对
-    const existingIndex = this.pairedClients.findIndex(
+    // 检查是否已认证
+    const existingIndex = this.authenticatedClients.findIndex(
       (c) => c.clientId === clientId
     );
 
-    const client: PairedClient = {
+    const client: AuthenticatedClient = {
       clientId,
       publicKey: clientPublicKey,
-      pairedAt: Date.now(),
+      authenticatedAt: Date.now(),
     };
 
     if (clientName !== undefined) {
@@ -222,30 +238,26 @@ export class PairingManager extends EventEmitter {
     }
 
     if (existingIndex >= 0) {
-      // 更新现有配对
-      this.pairedClients[existingIndex] = client;
+      // 更新现有认证
+      this.authenticatedClients[existingIndex] = client;
     } else {
-      // 添加新配对
-      this.pairedClients.push(client);
+      // 添加新认证
+      this.authenticatedClients.push(client);
     }
-
-    // 更新配对状态
-    this.currentPairing.status = 'completed';
-    this.clearExpiryTimer();
 
     // 派生并缓存共享密钥
     await this.deriveAndCacheSharedKey(clientId, clientPublicKey);
 
-    // 保存配对数据
-    await this.savePairingData();
+    // 保存认证数据
+    await this.saveAuthData();
 
-    this.emit('pairingSuccess', client);
+    this.emit('clientAuthenticated', client);
   }
 
   /**
    * 获取共享密钥
    * @param clientId 客户端 ID
-   * @returns 共享密钥（如果已配对）
+   * @returns 共享密钥（如果已认证）
    */
   async getSharedKey(clientId: string): Promise<CryptoKey | null> {
     // 尝试从缓存获取
@@ -254,8 +266,8 @@ export class PairingManager extends EventEmitter {
       return cached;
     }
 
-    // 查找配对信息
-    const client = this.pairedClients.find((c) => c.clientId === clientId);
+    // 查找认证信息
+    const client = this.authenticatedClients.find((c) => c.clientId === clientId);
     if (!client) {
       return null;
     }
@@ -265,38 +277,60 @@ export class PairingManager extends EventEmitter {
   }
 
   /**
-   * 检查客户端是否已配对
+   * 检查客户端是否已认证
    * @param clientId 客户端 ID
    */
   isPaired(clientId: string): boolean {
-    return this.pairedClients.some((c) => c.clientId === clientId);
+    return this.authenticatedClients.some((c) => c.clientId === clientId);
   }
 
   /**
-   * 移除配对
+   * 更新已认证客户端的公钥（用于重连时）
+   * @param clientId 客户端 ID
+   * @param newPublicKey 新的公钥
+   */
+  async updateClientPublicKey(
+    clientId: string,
+    newPublicKey: string
+  ): Promise<void> {
+    const client = this.authenticatedClients.find((c) => c.clientId === clientId);
+    if (!client) {
+      throw new Error(`客户端未认证: ${clientId}`);
+    }
+
+    // 更新公钥
+    client.publicKey = newPublicKey;
+
+    // 清除旧的共享密钥缓存
+    this.sharedKeyCache.delete(clientId);
+
+    // 派生并缓存新的共享密钥
+    await this.deriveAndCacheSharedKey(clientId, newPublicKey);
+
+    // 保存认证数据
+    await this.saveAuthData();
+
+    console.log(`已更新客户端公钥: ${clientId}`);
+  }
+
+  /**
+   * 移除客户端认证
    * @param clientId 客户端 ID
    */
   async removePairing(clientId: string): Promise<void> {
-    const index = this.pairedClients.findIndex((c) => c.clientId === clientId);
+    const index = this.authenticatedClients.findIndex((c) => c.clientId === clientId);
     if (index >= 0) {
-      this.pairedClients.splice(index, 1);
+      this.authenticatedClients.splice(index, 1);
       this.sharedKeyCache.delete(clientId);
-      await this.savePairingData();
+      await this.saveAuthData();
     }
   }
 
   /**
-   * 获取所有已配对的客户端
+   * 获取所有已认证的客户端
    */
-  getPairedClients(): PairedClient[] {
-    return [...this.pairedClients];
-  }
-
-  /**
-   * 获取当前配对状态
-   */
-  get currentPairingInfo(): PairingInfo | null {
-    return this.currentPairing;
+  getPairedClients(): AuthenticatedClient[] {
+    return [...this.authenticatedClients];
   }
 
   /**
@@ -331,29 +365,44 @@ export class PairingManager extends EventEmitter {
    * 确保配置目录存在
    */
   private async ensureConfigDir(): Promise<void> {
-    try {
-      await fs.mkdir(CONFIG_DIR, { recursive: true });
-    } catch {
-      // 目录可能已存在
-    }
+    await fs.mkdir(CONFIG_DIR, { recursive: true });
   }
 
   /**
-   * 加载配对数据
+   * 加载认证数据
+   * 文件不存在时返回 null，文件损坏或解析失败时抛出错误
    */
-  private async loadPairingData(): Promise<PairingData | null> {
+  private async loadAuthData(): Promise<AuthData | null> {
+    let content: string;
     try {
-      const content = await fs.readFile(PAIRING_DATA_FILE, 'utf-8');
-      return JSON.parse(content) as PairingData;
-    } catch {
-      return null;
+      content = await fs.readFile(AUTH_DATA_FILE, 'utf-8');
+    } catch (error) {
+      // 文件不存在：首次启动，返回 null
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return null;
+      }
+      throw error;
     }
+
+    // 文件存在但解析失败时，让错误向上传播
+    const data = JSON.parse(content) as AuthData;
+
+    // 兼容旧版数据
+    if (!data.accessToken) {
+      data.accessToken = generateAccessToken();
+    }
+    // 旧版字段名为 pairedClients，新版为 authenticatedClients
+    const dataAsRecord = data as unknown as Record<string, unknown>;
+    if (!data.authenticatedClients && dataAsRecord['pairedClients']) {
+      data.authenticatedClients = dataAsRecord['pairedClients'] as AuthenticatedClient[];
+    }
+    return data;
   }
 
   /**
-   * 保存配对数据
+   * 保存认证数据
    */
-  private async savePairingData(): Promise<void> {
+  private async saveAuthData(): Promise<void> {
     if (!this.keyPair) {
       throw new Error('密钥对未初始化');
     }
@@ -364,14 +413,15 @@ export class PairingManager extends EventEmitter {
       this.keyPair.privateKey
     );
 
-    const data: PairingData = {
+    const data: AuthData = {
       deviceId: this._deviceId,
+      accessToken: this._accessToken,
       publicKey: this.keyPair.publicKey,
       privateKeyJwk,
-      pairedClients: this.pairedClients,
+      authenticatedClients: this.authenticatedClients,
     };
 
-    await fs.writeFile(PAIRING_DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    await fs.writeFile(AUTH_DATA_FILE, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
   }
 
   /**
@@ -392,35 +442,6 @@ export class PairingManager extends EventEmitter {
 
     this.sharedKeyCache.set(clientId, sharedKey);
     return sharedKey;
-  }
-
-  /**
-   * 处理配对码过期
-   */
-  private handlePairingExpiry(): void {
-    if (this.currentPairing && this.currentPairing.status === 'pending') {
-      this.currentPairing.status = 'expired';
-      this.emit('pairingExpired');
-    }
-    this.clearExpiryTimer();
-  }
-
-  /**
-   * 清除配对状态
-   */
-  private clearPairingState(): void {
-    this.currentPairing = null;
-    this.clearExpiryTimer();
-  }
-
-  /**
-   * 清除过期定时器
-   */
-  private clearExpiryTimer(): void {
-    if (this.expiryTimer) {
-      clearTimeout(this.expiryTimer);
-      this.expiryTimer = null;
-    }
   }
 }
 

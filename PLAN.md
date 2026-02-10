@@ -6,7 +6,7 @@
 
 **核心特点：**
 
-- 本地运行 `mycc` 守护进程，一次配对，持久可用
+- 本地运行 `mycc` 守护进程，Token 授权，持久可用
 - 管理多个 Claude Code 实例 + 多个终端实例
 - Web 端可新建/切换/关闭任意会话
 - 端到端加密，中继服务器不解密内容
@@ -29,7 +29,7 @@
                            ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │                     中继服务器 (自托管 VPS)                            │
-│  设备注册 · 配对管理 · 消息路由转发(不解密) · 离线队列                 │
+│  设备注册 · Token 验证 · 消息路由转发(不解密) · 离线队列                 │
 └──────────────────────────┬───────────────────────────────────────────┘
                            │ WSS + E2E 加密
                            ▼
@@ -75,7 +75,7 @@ mycc/
 │   │       ├── claude-session.ts  # Claude Code 会话封装
 │   │       ├── terminal-session.ts# 普通终端会话封装
 │   │       ├── ws-client.ts       # 与中继的 WebSocket 连接
-│   │       └── pairing.ts         # 首次配对逻辑
+│   │       └── pairing.ts         # Token 认证管理
 │   │
 │   ├── relay/                     # 中继服务器
 │   │   └── src/
@@ -88,7 +88,7 @@ mycc/
 │       └── src/
 │           ├── App.tsx
 │           ├── pages/
-│           │   ├── PairingPage.tsx     # 首次配对
+│           │   ├── PairingPage.tsx     # Token 认证页
 │           │   ├── DashboardPage.tsx   # 会话仪表盘
 │           │   └── SessionPage.tsx     # 会话交互界面
 │           ├── components/
@@ -136,10 +136,10 @@ mycc/
    - 管理所有子会话的生命周期
 
 4. **CLI 入口** (`daemon/src/index.ts`)
-   - `mycc start` — 启动守护进程 + 首次配对（显示二维码/配对码）
+   - `mycc start` — 启动守护进程（显示 Access Token）
    - `mycc stop` — 停止守护进程
    - `mycc status` — 查看运行状态和活跃会话
-   - `mycc pair` — 重新生成配对码
+   - `mycc token` — 查看 Access Token
 
 5. **Claude 会话** (`daemon/src/claude-session.ts`)
    - 使用 `node-pty` 启动 `claude` 子进程
@@ -175,8 +175,8 @@ mycc/
 
 10. **设备注册** (`relay/src/device-registry.ts`)
     - `Map<deviceId, WebSocket>` 设备连接表
-    - `Map<pairingCode, deviceId>` 配对表
-    - 配对流程：Web 发送配对码 → 中继验证 → 绑定 daemon ↔ client
+    - `Map<accessToken, daemonId>` Token 注册表
+    - 认证流程：Web 发送 Access Token → 中继验证 → 绑定 daemon ↔ client
     - 心跳检测 + 自动清理
 
 11. **消息路由** (`relay/src/message-router.ts`)
@@ -196,10 +196,10 @@ mycc/
 
 13. **项目初始化**: Vite + React 19 + Tailwind 4 + shadcn/ui + React Router
 
-14. **配对页** (`PairingPage.tsx`)
-    - 输入 6 位配对码或扫码
+14. **认证页** (`PairingPage.tsx`)
+    - 输入 Access Token（格式：`mycc-<32hex>`）
     - ECDH 密钥交换
-    - 配对成功后凭证存 localStorage
+    - 认证成功后凭证存 localStorage
 
 15. **仪表盘** (`DashboardPage.tsx`)
     - 左侧会话列表 + 右侧交互区
@@ -223,7 +223,7 @@ mycc/
 ### 阶段 6: 集成与完善
 
 19. **端到端验证**
-    - `mycc start` → 配对 → Web 新建 Claude → 对话 → 权限审批
+    - `mycc start` → Token 认证 → Web 新建 Claude → 对话 → 权限审批
     - Web 新建终端 → 执行命令 → 查看输出
 
 20. **稳定性**: 断线重连、进程崩溃检测、错误通知
@@ -233,7 +233,7 @@ mycc/
 ### 传输层（中继可见）
 
 ```typescript
-{ type: "register"|"pair"|"message"|"heartbeat", from: string, to?: string, payload: string /*加密*/ }
+{ type: "register"|"token_auth"|"token_ack"|"message"|"heartbeat"|"error", from: string, to?: string, payload: string /*加密*/ }
 ```
 
 ### 应用层（E2E 加密内容）
@@ -429,7 +429,7 @@ SendMessage({
 | -------- | ---- | -------- | -------- |
 | 单元测试 | Vitest | 加密模块、协议解析、会话管理 | 每次提交前 |
 | 集成测试 | Vitest | daemon↔relay↔web 消息流 | 每个阶段完成 |
-| E2E 测试 | Playwright | 配对→新建会话→对话→权限审批 | 阶段 6 |
+| E2E 测试 | Playwright | Token 认证→新建会话→对话→权限审批 | 阶段 6 |
 
 ### 代码审查流程
 
@@ -536,7 +536,7 @@ scope:
 - 涉及加密模块 (`crypto.ts`) 的修改
 - WebSocket 通信相关代码
 - 用户输入处理逻辑
-- 敏感数据存储（配对密钥、会话凭证）
+- 敏感数据存储（Access Token、加密密钥、会话凭证）
 
 ### 文档同步
 
@@ -550,8 +550,8 @@ scope:
 
 ### 功能验证
 
-- [ ] `mycc start` 启动 daemon 并显示配对码
-- [ ] Web 输入配对码成功配对
+- [ ] `mycc start` 启动 daemon 并显示 Access Token
+- [ ] Web 输入 Access Token 成功认证
 - [ ] Web 新建 Claude 会话，本地 claude 进程启动
 - [ ] Web 发消息，Claude 收到并回复，Web 实时显示
 - [ ] Claude 请求权限 → Web 弹出审批框 → 批准后继续
@@ -572,9 +572,17 @@ scope:
 ### 安全验证
 
 - [ ] E2E 加密正确实现（中继服务器无法解密）
-- [ ] 配对码 5 分钟过期
+- [ ] Access Token 安全生成（`mycc-<32hex>` 格式）
 - [ ] 密钥安全存储（不明文保存）
 - [ ] 无硬编码凭证
+
+### 已知安全限制
+
+- **localStorage 存储风险**：当前认证凭证（Access Token、私钥 JWK）存储在 `localStorage` 中，XSS 攻击可能导致凭证泄露。这是 Web 应用的固有限制，后续可考虑以下缓解措施：
+  - 使用 `HttpOnly Cookie` + 后端 session 管理（需架构调整）
+  - 对存储的私钥进行二次加密（用户 PIN 码）
+  - 添加 CSP（Content Security Policy）头限制脚本来源
+  - Token 过期机制（当前 Token 无过期时间）
 
 ### 性能验证
 

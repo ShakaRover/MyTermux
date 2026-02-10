@@ -29,19 +29,23 @@ pnpm turbo run build
 
 ### 第三步：启动中继服务器
 
-在一个终端中运行：
+运行：
 
 ```bash
+# 后台运行（推荐，命令执行后立即返回）
 pnpm --filter @mycc/relay start
+
+# 或前台运行（用于调试，输出实时日志）
+pnpm --filter @mycc/relay start:fg
 ```
 
 你会看到：
-```
-[Relay] MyCC Relay Server 启动中，端口: 3000...
-[Relay] MyCC Relay Server 已启动
-[Relay] HTTP: http://localhost:3000
-[Relay] WebSocket: ws://localhost:3000/ws
-[Relay] 健康检查: http://localhost:3000/health
+
+```text
+中继服务器已在后台启动 (PID: 12345)
+HTTP: http://localhost:3000
+WebSocket: ws://localhost:3000/ws
+日志文件: ~/.mycc/relay.log
 ```
 
 ### 第四步：启动守护进程
@@ -49,21 +53,18 @@ pnpm --filter @mycc/relay start
 在另一个终端中运行：
 
 ```bash
-# 前台运行（推荐用于调试）
-pnpm --filter @mycc/daemon start -- -f
-
-# 或后台运行
+# 后台运行（推荐，命令执行后立即返回）
 pnpm --filter @mycc/daemon start
+
+# 或前台运行（用于调试，输出实时日志）
+pnpm --filter @mycc/daemon start:fg
 ```
 
-你会看到配对码：
+你会看到 Access Token：
 ```
-启动守护进程，连接到中继服务器: ws://localhost:3000
-守护进程已启动
-已连接到中继服务器
-
-配对码: 123456
-有效期: 300 秒
+守护进程已在后台启动 (PID: 12345)
+Access Token: mycc-a1b2c3d4e5f6...
+日志文件: ~/.mycc/daemon.log
 ```
 
 ### 第五步：启动 Web 界面
@@ -76,11 +77,45 @@ pnpm --filter @mycc/web dev
 
 打开浏览器访问 `http://localhost:5173`
 
-### 第六步：配对
+### 第六步：认证
 
-1. 在 Web 界面输入守护进程显示的 6 位配对码
-2. 点击"配对"按钮
-3. 配对成功后自动跳转到仪表盘
+1. 在 Web 界面输入守护进程显示的 Access Token
+2. 点击"连接 Daemon"按钮
+3. 认证成功后自动跳转到仪表盘
+
+### 停止服务
+
+使用完毕后，按以下顺序停止各组件（顺序不强制，但推荐按此操作）：
+
+#### 1. 停止守护进程
+
+```bash
+# 使用 pnpm
+pnpm --filter @mycc/daemon stop
+
+# 或使用 mycc 命令
+mycc stop
+```
+
+守护进程会优雅关闭所有活跃的 Claude 和终端会话，断开与中继的连接后退出。
+
+#### 2. 停止中继服务器
+
+```bash
+# 使用 pnpm
+pnpm --filter @mycc/relay stop
+
+# 或使用 mycc-relay 命令
+mycc-relay stop
+```
+
+中继服务器会关闭所有 WebSocket 连接并退出。
+
+> 前台运行（`-f`）模式下，也可以直接按 `Ctrl+C` 停止。
+
+#### 3. 停止 Web 开发服务器
+
+在运行 Web 的终端中按 `Ctrl+C`。
 
 ## 守护进程命令
 
@@ -90,11 +125,11 @@ pnpm --filter @mycc/web dev
 ### 使用 pnpm 运行
 
 ```bash
-# 前台启动（终端可见输出，适合调试）
-pnpm --filter @mycc/daemon start -- -f
-
-# 后台启动（作为守护进程运行）
+# 后台启动（作为守护进程运行，推荐）
 pnpm --filter @mycc/daemon start
+
+# 前台启动（终端可见输出，适合调试）
+pnpm --filter @mycc/daemon start:fg
 
 # 停止守护进程
 pnpm --filter @mycc/daemon stop
@@ -102,8 +137,8 @@ pnpm --filter @mycc/daemon stop
 # 查看运行状态
 pnpm --filter @mycc/daemon status
 
-# 重新生成配对码
-pnpm --filter @mycc/daemon pair
+# 查看 Access Token
+pnpm --filter @mycc/daemon token
 ```
 
 如果已将 daemon 全局安装，也可以使用 `mycc` 命令：
@@ -133,6 +168,10 @@ mycc start -r wss://relay.example.com
 mycc stop
 ```
 
+守护进程会优雅关闭：先关闭所有活跃会话（Claude 和终端子进程），断开与中继的 WebSocket 连接，最后退出。如果 3 秒内未响应，将被强制终止。
+
+> 前台运行（`-f`）模式下，也可以直接按 `Ctrl+C` 停止。
+
 ### 查看状态
 
 ```bash
@@ -146,17 +185,84 @@ PID: 12345
 连接状态: 已连接
 设备 ID: abc123def456
 活跃会话: 3
-已配对客户端: 1
+已认证客户端: 1
 ```
 
-### 重新生成配对码
+### 查看 Access Token
 
 ```bash
 # 使用 pnpm
-pnpm --filter @mycc/daemon pair
+pnpm --filter @mycc/daemon token
 
 # 或使用 mycc 命令
-mycc pair
+mycc token
+```
+
+## 中继服务器命令
+
+### 使用 pnpm 管理中继
+
+```bash
+# 后台启动（推荐）
+pnpm --filter @mycc/relay start
+
+# 前台启动（终端可见输出，适合调试）
+pnpm --filter @mycc/relay start:fg
+
+# 停止中继服务器
+pnpm --filter @mycc/relay stop
+
+# 查看运行状态
+pnpm --filter @mycc/relay status
+```
+
+如果已将 relay 全局安装，也可以使用 `mycc-relay` 命令：
+
+### 启动中继服务器
+
+```bash
+mycc-relay start [选项]
+
+选项：
+  -p, --port <port>   监听端口 (默认: 3000)
+  -f, --foreground     前台运行，不作为后台进程
+```
+
+**示例：**
+
+```bash
+# 后台运行，使用默认端口
+mycc-relay start
+
+# 前台运行，指定端口
+mycc-relay start -f -p 8080
+```
+
+### 停止中继服务器
+
+```bash
+mycc-relay stop
+```
+
+中继服务器会关闭所有 WebSocket 连接后退出。如果 10 秒内未响应，将被强制终止。
+
+> 前台运行（`-f`）模式下，也可以直接按 `Ctrl+C` 停止。
+
+### 查看中继状态
+
+```bash
+mycc-relay status
+```
+
+输出示例：
+
+```text
+中继服务器状态: 运行中
+PID: 12345
+端口: 3000
+已连接 Daemon: 1
+已连接客户端: 2
+已注册 Token: 1
 ```
 
 ## Web 界面使用
@@ -214,13 +320,14 @@ mycc pair
 
 ### 中继服务器配置
 
-通过环境变量配置：
+通过 CLI 参数或环境变量配置端口：
 
 ```bash
-# 设置端口
-export PORT=3000
+# CLI 参数指定端口
+pnpm --filter @mycc/relay start -- -p 8080
 
-# 启动
+# 或环境变量
+export PORT=8080
 pnpm --filter @mycc/relay start
 ```
 
@@ -240,17 +347,17 @@ relayUrl: 'ws://localhost:3000',
 - 密钥通过 ECDH P-256 交换
 - 中继服务器无法解密消息内容
 
-### 配对码安全
+### Access Token 安全
 
-- 配对码有效期 5 分钟
-- 每个配对码只能使用一次
-- 配对后公钥绑定，防止中间人攻击
+- Access Token 格式为 `mycc-<32位十六进制>`，安全随机生成
+- Token 持久存储于 `~/.mycc/pairing.json`，可反复使用
+- 认证后公钥绑定，防止中间人攻击
 
 ### 建议
 
 1. **使用 HTTPS/WSS** - 生产环境务必使用加密连接
 2. **限制访问** - 中继服务器应限制可访问的 IP
-3. **定期重新配对** - 定期生成新的配对以更新密钥
+3. **定期更换 Token** - 如有安全顾虑可重新生成 Access Token
 
 ## 故障排除
 
@@ -261,11 +368,11 @@ relayUrl: 'ws://localhost:3000',
 3. 检查防火墙设置
 4. 检查网络连接
 
-### 配对失败
+### 认证失败
 
-1. 确认配对码正确
-2. 确认配对码未过期
-3. 确认守护进程已连接到中继
+1. 确认 Access Token 正确（以 `mycc-` 开头）
+2. 确认守护进程已启动并连接到中继
+3. 确认 Web 端中继地址与守护进程一致
 
 ### 会话无响应
 
@@ -281,13 +388,13 @@ relayUrl: 'ws://localhost:3000',
 
 ## 常见问题
 
-### Q: 配对码过期怎么办？
+### Q: Access Token 在哪里获取？
 
-运行 `mycc pair` 重新生成配对码。
+启动守护进程后终端会显示 Access Token，也可以运行 `mycc token` 随时查看。
 
-### Q: 可以同时配对多个 Web 客户端吗？
+### Q: 可以同时连接多个 Web 客户端吗？
 
-可以。每次生成新的配对码可以配对新的客户端，已配对的客户端不受影响。
+可以。多个 Web 客户端可以使用同一个 Access Token 认证，互不影响。
 
 ### Q: 断网后会自动重连吗？
 

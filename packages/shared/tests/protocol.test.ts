@@ -77,6 +77,28 @@ describe('Protocol Module', () => {
       expect(isTransportMessage(message)).toBe(true);
     });
 
+    it('should return true for token_auth messages', () => {
+      const message: TransportMessage = {
+        type: 'token_auth',
+        from: 'client-123',
+        payload: JSON.stringify({ deviceType: 'client', publicKey: 'key', accessToken: 'mycc-abc' }),
+        timestamp: Date.now(),
+      };
+
+      expect(isTransportMessage(message)).toBe(true);
+    });
+
+    it('should return true for token_ack messages', () => {
+      const message: TransportMessage = {
+        type: 'token_ack',
+        from: 'relay',
+        payload: JSON.stringify({ success: true, daemonId: 'daemon-1', publicKey: 'key' }),
+        timestamp: Date.now(),
+      };
+
+      expect(isTransportMessage(message)).toBe(true);
+    });
+
     it('should return false for invalid messages', () => {
       expect(isTransportMessage(null)).toBe(false);
       expect(isTransportMessage(undefined)).toBe(false);

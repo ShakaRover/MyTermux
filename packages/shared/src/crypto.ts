@@ -225,12 +225,13 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
 }
 
 /**
- * 生成 6 位数字配对码
+ * 生成 Access Token（用于 daemon 授权客户端连接）
+ * 格式：mycc-<32 个十六进制字符>（128 位随机熵，总长度 37 字符）
  */
-export function generatePairingCode(): string {
-  const array = crypto.getRandomValues(new Uint32Array(1));
-  // 确保始终为 6 位数字（100000 - 999999）
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const code = (array[0]! % 900000) + 100000;
-  return code.toString();
+export function generateAccessToken(): string {
+  const array = crypto.getRandomValues(new Uint8Array(16));
+  const hex = Array.from(array)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `mycc-${hex}`;
 }

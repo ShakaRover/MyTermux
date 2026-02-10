@@ -6,7 +6,7 @@ import {
   decrypt,
   encryptJson,
   decryptJson,
-  generatePairingCode,
+  generateAccessToken,
   arrayBufferToBase64,
   base64ToArrayBuffer,
 } from '../src/crypto';
@@ -134,22 +134,20 @@ describe('Crypto Module', () => {
     });
   });
 
-  describe('generatePairingCode', () => {
-    it('should generate a 6-digit code', () => {
-      const code = generatePairingCode();
+  describe('generateAccessToken', () => {
+    it('should generate a token with mycc- prefix and 32 hex chars', () => {
+      const token = generateAccessToken();
 
-      expect(code).toMatch(/^\d{6}$/);
-      expect(Number(code)).toBeGreaterThanOrEqual(100000);
-      expect(Number(code)).toBeLessThanOrEqual(999999);
+      expect(token).toMatch(/^mycc-[0-9a-f]{32}$/);
     });
 
-    it('should generate different codes', () => {
-      const codes = new Set<string>();
+    it('should generate unique tokens each time', () => {
+      const tokens = new Set<string>();
       for (let i = 0; i < 10; i++) {
-        codes.add(generatePairingCode());
+        tokens.add(generateAccessToken());
       }
-      // 10 次生成应该至少有多个不同的码
-      expect(codes.size).toBeGreaterThan(1);
+      // 10 次随机生成应当全部唯一
+      expect(tokens.size).toBe(10);
     });
   });
 
