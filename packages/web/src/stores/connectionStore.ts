@@ -92,6 +92,19 @@ export interface ConnectionStoreActions {
   setAppMessageHandler: (handler: AppMessageHandler | null) => void;
 }
 
+/**
+ * 获取默认中继服务器 WebSocket 地址
+ *
+ * HTTPS 页面下浏览器会阻止连接 ws://（Mixed Content），
+ * 此时通过 Vite 代理（开发）或同域 /ws（生产）连接 Relay。
+ */
+function getDefaultRelayUrl(): string {
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return `wss://${window.location.host}/ws`;
+  }
+  return 'ws://localhost:3000/ws';
+}
+
 /** 初始状态 */
 const initialState: ConnectionStoreState = {
   state: 'disconnected',
@@ -101,7 +114,7 @@ const initialState: ConnectionStoreState = {
   keyPair: null,
   sharedKey: null,
   ws: null,
-  relayUrl: import.meta.env.VITE_RELAY_URL || 'ws://localhost:3000/ws',
+  relayUrl: import.meta.env.VITE_RELAY_URL || getDefaultRelayUrl(),
   accessToken: null,
   appMessageHandler: null,
   /** C1: 缓存 hasSavedPairing 状态，避免每次渲染读取 localStorage */

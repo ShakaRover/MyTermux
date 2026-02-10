@@ -209,12 +209,12 @@ export class TerminalSession extends EventEmitter {
 
   /**
    * 获取会话标题
+   * 格式：「进程名: 工作目录」，如 "bash: /home/user/project"
    */
   private getTitle(): string {
-    if (this.pty) {
-      return this.pty.process || 'Terminal';
-    }
-    return 'Terminal';
+    const processName = this.pty?.process || 'Terminal';
+    const cwd = this.options.cwd ?? process.cwd();
+    return `${processName}: ${cwd}`;
   }
 
   /**

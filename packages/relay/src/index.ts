@@ -15,8 +15,9 @@ import { DeviceRegistry } from './device-registry.js';
 import { MessageRouter } from './message-router.js';
 import { WebSocketHandler } from './websocket-handler.js';
 
-// 从环境变量获取端口
+// 从环境变量获取端口和地址
 const port = Number(process.env['PORT']) || 3000;
+const hostname = process.env['HOST'] || '0.0.0.0';
 
 // 初始化核心组件
 const deviceRegistry = new DeviceRegistry();
@@ -26,12 +27,13 @@ const wsHandler = new WebSocketHandler(deviceRegistry, messageRouter);
 // 创建 Hono 应用
 const app = createServer({ deviceRegistry });
 
-console.log(`[Relay] MyCC Relay Server 启动中，端口: ${port}...`);
+console.log(`[Relay] MyCC Relay Server 启动中，地址: ${hostname}:${port}...`);
 
 // 启动 HTTP 服务器
 const httpServer = serve({
   fetch: app.fetch,
   port,
+  hostname,
 });
 
 // 创建 WebSocket 服务器，附加到 HTTP 服务器
@@ -52,9 +54,9 @@ wss.on('error', (error) => {
 });
 
 console.log(`[Relay] MyCC Relay Server 已启动`);
-console.log(`[Relay] HTTP: http://localhost:${port}`);
-console.log(`[Relay] WebSocket: ws://localhost:${port}/ws`);
-console.log(`[Relay] 健康检查: http://localhost:${port}/health`);
+console.log(`[Relay] HTTP: http://${hostname}:${port}`);
+console.log(`[Relay] WebSocket: ws://${hostname}:${port}/ws`);
+console.log(`[Relay] 健康检查: http://${hostname}:${port}/health`);
 
 // 优雅关闭处理
 function gracefulShutdown(signal: string): void {

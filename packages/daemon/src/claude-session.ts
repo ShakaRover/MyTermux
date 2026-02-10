@@ -292,14 +292,11 @@ export class ClaudeSession extends EventEmitter {
 
   /**
    * 获取会话标题
+   * 格式：「Claude: 工作目录」，如 "Claude: /home/user/project"
    */
   private getTitle(): string {
-    const prefix = 'Claude';
-    if (this.options.cwd) {
-      const parts = this.options.cwd.split('/');
-      return `${prefix}: ${parts[parts.length - 1]}`;
-    }
-    return prefix;
+    const cwd = this.options.cwd ?? process.cwd();
+    return `Claude: ${cwd}`;
   }
 
   /**

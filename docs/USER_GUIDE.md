@@ -225,6 +225,9 @@ mycc-relay start [选项]
 
 选项：
   -p, --port <port>   监听端口 (默认: 3000)
+  -H, --host <host>   监听地址 (默认: 0.0.0.0)
+  --cert <path>       TLS 证书文件路径（启用 HTTPS/WSS）
+  --key <path>        TLS 私钥文件路径（启用 HTTPS/WSS）
   -f, --foreground     前台运行，不作为后台进程
 ```
 
@@ -236,6 +239,9 @@ mycc-relay start
 
 # 前台运行，指定端口
 mycc-relay start -f -p 8080
+
+# 指定监听地址和端口
+mycc-relay start -H 0.0.0.0 -p 8080
 ```
 
 ### 停止中继服务器
@@ -318,26 +324,199 @@ PID: 12345
 
 ## 配置
 
-### 中继服务器配置
+### 架构说明
 
-通过 CLI 参数或环境变量配置端口：
+MyCC 采用三组件架构：
+
+```text
+Web 客户端 ──WebSocket──→ Relay 中继服务器 ←──WebSocket── Daemon 守护进程
+(浏览器)                    (远端部署)                    (本地运行)
+```
+
+- **Web + Relay** 通常部署在远端服务器
+- **Daemon** 在本地机器运行，连接远端 Relay
+- Web 与 Daemon 之间的通信经过 E2E 加密（ECDH P-256 + AES-256-GCM），Relay 仅做消息转发，无法解密
+
+### 中继服务器（Relay）配置
+
+Relay 支持通过 **CLI 参数**或**环境变量**配置监听地址、端口和 TLS。
+
+| 配置项     | CLI 参数            | 环境变量   | 默认值    |
+|------------|---------------------|------------|-----------|
+| 监听地址   | `-H, --host <host>` | `HOST`     | `0.0.0.0` |
+| 监听端口   | `-p, --port <port>` | `PORT`     | `3000`    |
+| TLS 证书   | `--cert <path>`     | `TLS_CERT` | （无）    |
+| TLS 私钥   | `--key <path>`      | `TLS_KEY`  | （无）    |
+
+**CLI 参数优先于环境变量。**
 
 ```bash
-# CLI 参数指定端口
-pnpm --filter @mycc/relay start -- -p 8080
+# 使用 CLI 参数
+mycc-relay start -H 0.0.0.0 -p 8080
 
-# 或环境变量
+# 使用环境变量
+export HOST=0.0.0.0
 export PORT=8080
-pnpm --filter @mycc/relay start
+mycc-relay start
+
+# pnpm 方式（通过环境变量传参）
+HOST=0.0.0.0 PORT=8080 pnpm --filter @mycc/relay start
+
+# 启用 TLS（HTTPS/WSS）
+mycc-relay start --cert /path/to/cert.pem --key /path/to/key.pem
+
+# pnpm + TLS（通过环境变量传参）
+TLS_CERT=/path/to/cert.pem TLS_KEY=/path/to/key.pem pnpm --filter @mycc/relay start
 ```
 
-### Web 配置
+> `--cert` 和 `--key` 必须同时提供。启用 TLS 后，Relay 以 HTTPS/WSS 模式运行，Daemon 应使用 `wss://` 连接。
 
-编辑 `packages/web/src/stores/connectionStore.ts` 修改默认中继地址：
+### 守护进程（Daemon）配置
 
-```typescript
-relayUrl: 'ws://localhost:3000',
+Daemon 作为 WebSocket 客户端连接 Relay，支持配置目标中继服务器地址。
+
+| 配置项         | CLI 参数            | 环境变量    | 默认值                |
+|----------------|---------------------|-------------|-----------------------|
+| 中继服务器地址 | `-r, --relay <url>` | `RELAY_URL` | `ws://localhost:3000` |
+
+**CLI 参数优先于环境变量。**
+
+```bash
+# 连接本地中继（默认）
+mycc start
+
+# 连接远程中继服务器（无 TLS）
+mycc start -r ws://relay.example.com
+
+# 连接远程中继服务器（有 TLS，需反向代理支持）
+mycc start -r wss://relay.example.com
+
+# pnpm 方式（通过环境变量传参）
+RELAY_URL=ws://relay.example.com pnpm --filter @mycc/daemon start
 ```
+
+> Daemon 会自动在 URL 末尾补充 `/ws` 路径，因此 `ws://relay.example.com` 和 `ws://relay.example.com/ws` 效果相同。
+> 使用 `wss://` 需要 Relay 启用 TLS（`--cert`/`--key`）或前部署反向代理（如 Nginx/Caddy）做 TLS 终结。
+
+### Web 客户端配置
+
+Web 客户端支持通过**环境变量**配置开发服务器和中继服务器地址。
+
+#### 开发服务器（Vite）
+
+| 配置项   | 环境变量    | 默认值      |
+|----------|-------------|-------------|
+| 监听地址 | `VITE_HOST` | `localhost` |
+| 监听端口 | `VITE_PORT` | `5173`      |
+
+```bash
+# 默认启动
+pnpm --filter @mycc/web dev
+
+# 指定地址和端口
+VITE_HOST=0.0.0.0 VITE_PORT=3001 pnpm --filter @mycc/web dev
+```
+
+#### 中继服务器地址
+
+| 配置项                    | 环境变量         | 默认值                   |
+|---------------------------|------------------|--------------------------|
+| 中继服务器 WebSocket 地址 | `VITE_RELAY_URL` | `ws://localhost:3000/ws` |
+
+```bash
+# 连接远程中继（无 TLS）
+VITE_RELAY_URL=ws://relay.example.com/ws pnpm --filter @mycc/web dev
+
+# 连接远程中继（有 TLS）
+VITE_RELAY_URL=wss://relay.example.com/ws pnpm --filter @mycc/web dev
+```
+
+也可以创建 `.env` 文件在 `packages/web/` 目录下：
+
+```env
+VITE_RELAY_URL=ws://relay.example.com/ws
+VITE_HOST=0.0.0.0
+VITE_PORT=3001
+```
+
+> Web 端也支持在认证页面输入 Token 前手动修改中继地址。
+
+### 远程部署示例
+
+> **⚠️ 重要：远程部署必须使用 HTTPS**
+>
+> MyCC 的 E2E 加密依赖浏览器 Web Crypto API（`crypto.subtle`），该 API **仅在安全上下文下可用**：
+>
+> - ✅ `https://` 任意地址
+> - ✅ `http://localhost` / `http://127.0.0.1`
+> - ❌ `http://<远程IP>` 或 `http://<域名>`（非 localhost 的 HTTP）
+>
+> 如果通过 HTTP 访问远程 Web 界面，将会出现 `Cannot read properties of undefined (reading 'generateKey')` 错误。
+
+#### 方案 A：反向代理 + TLS（推荐生产环境）
+
+使用 Nginx 或 Caddy 在 Relay/Web 前做 TLS 终结：
+
+```bash
+# 1. 远端：启动中继服务器
+mycc-relay start -H 127.0.0.1 -p 3000
+
+# 2. 远端：启动 Web 构建/服务
+pnpm --filter @mycc/web build
+# 使用 Nginx/Caddy 反向代理静态文件和 WebSocket
+
+# 3. 本地：启动 Daemon 连接远端中继（通过 TLS）
+mycc start -r wss://relay.example.com
+
+# 4. 浏览器访问 https://web.example.com，输入 Access Token 认证
+```
+
+#### 方案 B：自签名证书 + Relay TLS（快速测试）
+
+生成自签名证书，让 Relay 直接以 HTTPS/WSS 模式运行：
+
+```bash
+# 0. 生成自签名证书（有效期 365 天）
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout ~/.mycc/key.pem -out ~/.mycc/cert.pem \
+  -days 365 -subj '/CN=mycc-relay'
+
+# 1. 远端：启动中继服务器（TLS 模式）
+mycc-relay start -H 0.0.0.0 -p 3000 --cert ~/.mycc/cert.pem --key ~/.mycc/key.pem
+
+# 或使用 pnpm + 环境变量
+TLS_CERT=~/.mycc/cert.pem TLS_KEY=~/.mycc/key.pem HOST=0.0.0.0 PORT=3000 pnpm --filter @mycc/relay start:fg
+
+# 2. 远端：启动 Web 开发服务器（HTTPS 模式）
+VITE_HOST=0.0.0.0 VITE_HTTPS=true pnpm --filter @mycc/web dev
+
+# 3. 本地：启动 Daemon 连接远端中继（WSS）
+RELAY_URL=wss://203.0.113.10:3000 pnpm --filter @mycc/daemon start:fg
+
+# 4. 浏览器访问 https://203.0.113.10:5173，接受自签名证书后输入 Access Token
+```
+
+> 自签名证书会触发浏览器安全警告，点击「高级」→「继续访问」即可。
+> Daemon 连接 `wss://` 自签名证书的 Relay 时，Node.js 默认会拒绝不受信任的证书。可设置环境变量 `NODE_TLS_REJECT_UNAUTHORIZED=0` 跳过验证（仅限测试环境）。
+
+#### 方案 C：Vite HTTPS + Relay 代理（无需证书）
+
+如果不想为 Relay 配置证书，可以让 Vite 代理 WebSocket 到本地 Relay：
+
+```bash
+# 1. 远端：启动中继服务器（普通 HTTP/WS）
+mycc-relay start -H 0.0.0.0 -p 3000
+
+# 2. 远端：启动 Web 开发服务器（HTTPS 模式，自动代理 /ws 到 Relay）
+VITE_HOST=0.0.0.0 VITE_HTTPS=true VITE_RELAY_URL=ws://localhost:3000/ws pnpm --filter @mycc/web dev
+
+# 3. 本地：启动 Daemon 连接远端中继（普通 WS）
+RELAY_URL=ws://203.0.113.10:3000 pnpm --filter @mycc/daemon start:fg
+
+# 4. 浏览器访问 https://203.0.113.10:5173，接受自签名证书后输入 Access Token
+```
+
+> 此方案中浏览器通过 HTTPS 访问 Vite，Vite 内部将 `/ws` 代理到本地 Relay 的 `ws://localhost:3000/ws`。Daemon 直接用 `ws://` 连接 Relay，无需 TLS。
 
 ## 安全注意事项
 

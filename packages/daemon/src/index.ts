@@ -131,7 +131,7 @@ program
 program
   .command('start')
   .description('启动守护进程')
-  .option('-r, --relay <url>', '中继服务器地址', 'ws://localhost:3000')
+  .option('-r, --relay <url>', '中继服务器地址', process.env['RELAY_URL'] || 'ws://localhost:3000')
   .option('-f, --foreground', '前台运行（不作为守护进程）', false)
   .action(async (options: { relay: string; foreground: boolean }) => {
     // 检查是否已有进程在运行

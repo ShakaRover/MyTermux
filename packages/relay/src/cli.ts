@@ -11,6 +11,7 @@
 
 import { Command } from 'commander';
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
@@ -31,6 +32,9 @@ const LOG_FILE = path.join(CONFIG_DIR, 'relay.log');
 
 /** 默认端口 */
 const DEFAULT_PORT = 3000;
+
+/** 默认监听地址 */
+const DEFAULT_HOST = '0.0.0.0';
 
 // ============================================================================
 // 工具函数
@@ -89,9 +93,9 @@ function isProcessRunning(pid: number): boolean {
 /**
  * 通过健康检查获取服务器状态
  */
-async function fetchHealthStatus(port: number): Promise<Record<string, unknown> | null> {
+async function fetchHealthStatus(host: string, port: number): Promise<Record<string, unknown> | null> {
   try {
-    const response = await fetch(`http://localhost:${port}/health`);
+    const response = await fetch(`http://${host}:${port}/health`);
     if (response.ok) {
       return await response.json() as Record<string, unknown>;
     }
@@ -174,10 +178,34 @@ program
 program
   .command('start')
   .description('启动中继服务器')
-  .option('-p, --port <port>', '监听端口', String(DEFAULT_PORT))
+  .option('-p, --port <port>', '监听端口', process.env['PORT'] || String(DEFAULT_PORT))
+  .option('-H, --host <host>', '监听地址', process.env['HOST'] || DEFAULT_HOST)
+  .option('--cert <path>', 'TLS 证书文件路径（启用 HTTPS/WSS）', process.env['TLS_CERT'] || '')
+  .option('--key <path>', 'TLS 私钥文件路径（启用 HTTPS/WSS）', process.env['TLS_KEY'] || '')
   .option('-f, --foreground', '前台运行（不作为后台进程）', false)
-  .action(async (options: { port: string; foreground: boolean }) => {
+  .action(async (options: { port: string; host: string; cert: string; key: string; foreground: boolean }) => {
     const port = parseInt(options.port, 10);
+    const host = options.host;
+    const certPath = options.cert;
+    const keyPath = options.key;
+    const useTls = !!(certPath && keyPath);
+
+    // 校验 TLS 参数：必须同时提供 cert 和 key
+    if ((certPath && !keyPath) || (!certPath && keyPath)) {
+      console.error('错误: --cert 和 --key 必须同时提供');
+      process.exit(1);
+    }
+
+    // 校验证书文件存在
+    if (useTls) {
+      try {
+        await fs.access(certPath);
+        await fs.access(keyPath);
+      } catch {
+        console.error(`错误: 证书文件不存在: ${certPath} 或 ${keyPath}`);
+        process.exit(1);
+      }
+    }
 
     // 检查是否已有进程在运行
     const existingPid = await readPidFile();
@@ -187,7 +215,7 @@ program
     }
 
     // 没有 PID 文件，通过端口检测是否已有服务在运行
-    const health = await fetchHealthStatus(port);
+    const health = await fetchHealthStatus(host, port);
     if (health) {
       const portPid = await findPidByPort(port);
       console.log(`端口 ${port} 已被占用${portPid ? ` (PID: ${portPid})` : ''}，中继服务器可能已在运行`);
@@ -198,7 +226,10 @@ program
     // 后台模式：fork 子进程并立即退出父进程
     if (!options.foreground) {
       const scriptPath = fileURLToPath(import.meta.url);
-      const args = ['start', '-f', '-p', String(port)];
+      const args = ['start', '-f', '-p', String(port), '-H', host];
+      if (useTls) {
+        args.push('--cert', certPath, '--key', keyPath);
+      }
 
       await ensureConfigDir();
 
@@ -206,7 +237,7 @@ program
       const child = spawn(process.execPath, [scriptPath, ...args], {
         detached: true,
         stdio: ['ignore', logFd.fd, logFd.fd],
-        env: { ...process.env, PORT: String(port) },
+        env: { ...process.env, PORT: String(port), HOST: host },
       });
 
       child.unref();
@@ -214,6 +245,7 @@ program
       await logFd.close();
 
       // 等待子进程写入 PID 文件，确认启动成功
+      const protocol = useTls ? 's' : '';
       let started = false;
       for (let i = 0; i < 30; i++) {
         await new Promise((resolve) => setTimeout(resolve, 200));
@@ -221,8 +253,8 @@ program
         if (pid && isProcessRunning(pid)) {
           started = true;
           console.log(`中继服务器已在后台启动 (PID: ${pid})`);
-          console.log(`HTTP: http://localhost:${port}`);
-          console.log(`WebSocket: ws://localhost:${port}/ws`);
+          console.log(`HTTP${protocol}: http${protocol}://${host}:${port}`);
+          console.log(`WebSocket: ws${protocol}://${host}:${port}/ws`);
           console.log(`日志文件: ${LOG_FILE}`);
           break;
         }
@@ -236,8 +268,9 @@ program
     }
 
     // 前台模式：直接在当前进程运行服务器
-    // 设置端口环境变量
+    // 设置端口和地址环境变量
     process.env['PORT'] = String(port);
+    process.env['HOST'] = host;
 
     // 动态导入服务器启动逻辑
     const { serve } = await import('@hono/node-server');
@@ -255,13 +288,28 @@ program
     // 创建 Hono 应用
     const app = createServer({ deviceRegistry });
 
-    console.log(`[Relay] MyCC Relay Server 启动中，端口: ${port}...`);
+    const protocol = useTls ? 's' : '';
+    console.log(`[Relay] MyCC Relay Server 启动中，地址: ${host}:${port}${useTls ? ' (TLS)' : ''}...`);
 
-    // 启动 HTTP 服务器
-    const httpServer = serve({
+    // 启动 HTTP/HTTPS 服务器
+    const serveOptions: Parameters<typeof serve>[0] = {
       fetch: app.fetch,
       port,
-    });
+      hostname: host,
+    };
+
+    // TLS 模式：使用 Node.js https.createServer
+    if (useTls) {
+      const https = await import('node:https');
+      const tlsOptions = {
+        cert: fsSync.readFileSync(certPath),
+        key: fsSync.readFileSync(keyPath),
+      };
+      serveOptions.createServer = https.createServer;
+      serveOptions.serverOptions = tlsOptions;
+    }
+
+    const httpServer = serve(serveOptions);
 
     // 创建 WebSocket 服务器
     const wss = new WebSocketServer({
@@ -282,9 +330,9 @@ program
     await writePidFile(process.pid);
 
     console.log(`[Relay] MyCC Relay Server 已启动`);
-    console.log(`[Relay] HTTP: http://localhost:${port}`);
-    console.log(`[Relay] WebSocket: ws://localhost:${port}/ws`);
-    console.log(`[Relay] 健康检查: http://localhost:${port}/health`);
+    console.log(`[Relay] HTTP${protocol}: http${protocol}://${host}:${port}`);
+    console.log(`[Relay] WebSocket: ws${protocol}://${host}:${port}/ws`);
+    console.log(`[Relay] 健康检查: http${protocol}://${host}:${port}/health`);
     console.log('[Relay] 中继服务器正在前台运行，按 Ctrl+C 停止');
 
     // 优雅关闭处理
@@ -343,8 +391,9 @@ program
 program
   .command('stop')
   .description('停止中继服务器')
-  .option('-p, --port <port>', '服务器端口（用于查找进程）', String(DEFAULT_PORT))
-  .action(async (options: { port: string }) => {
+  .option('-p, --port <port>', '服务器端口（用于查找进程）', process.env['PORT'] || String(DEFAULT_PORT))
+  .option('-H, --host <host>', '服务器地址（用于健康检查）', process.env['HOST'] || DEFAULT_HOST)
+  .action(async (options: { port: string; host: string }) => {
     const port = parseInt(options.port, 10);
     const pid = await readPidFile();
 
@@ -377,8 +426,10 @@ program
   .command('status')
   .description('查看中继服务器运行状态')
   .option('-p, --port <port>', '服务器端口（用于健康检查）', String(DEFAULT_PORT))
-  .action(async (options: { port: string }) => {
+  .option('-H, --host <host>', '服务器地址（用于健康检查）', DEFAULT_HOST)
+  .action(async (options: { port: string; host: string }) => {
     const port = parseInt(options.port, 10);
+    const host = options.host;
     let pid = await readPidFile();
 
     // 没有 PID 文件时，通过健康检查 + 端口查找
@@ -386,7 +437,7 @@ program
       await removePidFile();
 
       // 尝试健康检查看服务是否在运行
-      const health = await fetchHealthStatus(port);
+      const health = await fetchHealthStatus(host, port);
       if (health) {
         // 服务在运行但没有 PID 文件，通过端口查找 PID
         pid = await findPidByPort(port);
@@ -396,7 +447,7 @@ program
         } else {
           console.log('中继服务器状态: 运行中');
         }
-        console.log(`端口: ${port}`);
+        console.log(`地址: ${host}:${port}`);
         const connections = health['connections'] as Record<string, number> | undefined;
         if (connections) {
           console.log(`已连接 Daemon: ${connections['daemons'] ?? 0}`);
@@ -414,9 +465,9 @@ program
     console.log(`PID: ${pid}`);
 
     // 通过健康检查获取详细状态
-    const health = await fetchHealthStatus(port);
+    const health = await fetchHealthStatus(host, port);
     if (health) {
-      console.log(`端口: ${port}`);
+      console.log(`地址: ${host}:${port}`);
       const connections = health['connections'] as Record<string, number> | undefined;
       if (connections) {
         console.log(`已连接 Daemon: ${connections['daemons'] ?? 0}`);
@@ -424,7 +475,7 @@ program
         console.log(`已注册 Token: ${connections['accessTokens'] ?? 0}`);
       }
     } else {
-      console.log(`端口: ${port} (健康检查无响应)`);
+      console.log(`地址: ${host}:${port} (健康检查无响应)`);
     }
   });
 
