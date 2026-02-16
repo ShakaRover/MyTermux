@@ -2,20 +2,17 @@
  * 连接状态管理 Store
  *
  * 管理与 daemon 的 WebSocket 连接状态和加密密钥
- *
- * 术语说明：代码中的 "pairing"（配对）是历史遗留命名，
- * 实际流程已改为 Access Token 认证模式。"paired" 状态表示认证完成。
  */
 
 import { create } from 'zustand';
-import type { KeyPair, AppMessage } from '@mycc/shared';
+import type { KeyPair, AppMessage } from '@opentermux/shared';
 import {
-  savePairingToken,
-  getPairingToken,
-  clearPairingToken,
-  restoreKeyPairFromToken,
+  saveAuthToken,
+  getAuthToken,
+  clearAuthToken,
+  restoreKeyPairFromAuthToken,
   exportPrivateKeyToJwk,
-  type PairingToken,
+  type AuthToken,
 } from '../utils/storage';
 
 /** 连接状态枚举 */
@@ -23,8 +20,8 @@ export type ConnectionState =
   | 'disconnected'   // 未连接
   | 'connecting'     // 正在连接中继服务器
   | 'connected'      // 已连接中继服务器，等待认证
-  | 'pairing'        // 认证中（历史命名，实际为 Token 认证流程）
-  | 'paired'         // 已认证，可以通信
+  | 'authenticating' // 认证中
+  | 'authenticated'  // 已认证，可以通信
   | 'error';         // 错误状态
 
 /** 应用消息处理器类型 */
@@ -52,8 +49,8 @@ export interface ConnectionStoreState {
   accessToken: string | null;
   /** 全局应用消息处理器 */
   appMessageHandler: AppMessageHandler | null;
-  /** 是否有保存的配对令牌（缓存值，避免每次渲染读取 localStorage） */
-  _hasSavedPairing: boolean;
+  /** 是否有保存的认证凭证（缓存值，避免每次渲染读取 localStorage） */
+  _hasSavedAuth: boolean;
 }
 
 /** 连接 Store 操作 */
@@ -80,14 +77,14 @@ export interface ConnectionStoreActions {
   reset: () => void;
   /** 断开连接 */
   disconnect: () => void;
-  /** 保存配对令牌到本地存储（返回是否成功） */
-  savePairingToStorage: () => Promise<boolean>;
-  /** 从本地存储恢复配对信息 */
-  restoreFromStorage: () => Promise<boolean>;
-  /** 清除本地存储的配对信息 */
-  clearStorage: () => void;
-  /** 检查是否有保存的配对令牌 */
-  hasSavedPairing: () => boolean;
+  /** 保存认证凭证到本地存储（返回是否成功） */
+  saveAuthToStorage: () => Promise<boolean>;
+  /** 从本地存储恢复认证信息 */
+  restoreAuthFromStorage: () => Promise<boolean>;
+  /** 清除本地存储的认证信息 */
+  clearAuthStorage: () => void;
+  /** 检查是否有保存的认证凭证 */
+  hasSavedAuth: () => boolean;
   /** 设置全局应用消息处理器 */
   setAppMessageHandler: (handler: AppMessageHandler | null) => void;
 }
@@ -117,8 +114,8 @@ const initialState: ConnectionStoreState = {
   relayUrl: import.meta.env.VITE_RELAY_URL || getDefaultRelayUrl(),
   accessToken: null,
   appMessageHandler: null,
-  /** C1: 缓存 hasSavedPairing 状态，避免每次渲染读取 localStorage */
-  _hasSavedPairing: getPairingToken() !== null,
+  /** C1: 缓存 hasSavedAuth 状态，避免每次渲染读取 localStorage */
+  _hasSavedAuth: getAuthToken() !== null,
 };
 
 /** 连接状态 Store */
@@ -165,43 +162,43 @@ export const useConnectionStore = create<ConnectionStoreState & ConnectionStoreA
       });
     },
 
-    savePairingToStorage: async () => {
+    saveAuthToStorage: async () => {
       const { deviceId, daemonId, keyPair, relayUrl, accessToken } = get();
       if (!deviceId || !daemonId || !keyPair) {
-        console.warn('无法保存配对令牌：缺少必要信息');
+        console.warn('无法保存认证凭证：缺少必要信息');
         return false;
       }
 
       try {
         const privateKeyJwk = await exportPrivateKeyToJwk(keyPair.privateKey);
-        const token: PairingToken = {
+        const token: AuthToken = {
           deviceId,
           daemonId,
           publicKey: keyPair.publicKey,
           privateKeyJwk,
-          pairedAt: Date.now(),
+          authenticatedAt: Date.now(),
           relayUrl,
           ...(accessToken && { accessToken }),
         };
-        savePairingToken(token);
-        set({ _hasSavedPairing: true });
-        console.log('配对令牌已保存');
+        saveAuthToken(token);
+        set({ _hasSavedAuth: true });
+        console.log('认证凭证已保存');
         return true;
       } catch (error) {
-        console.error('保存配对令牌失败:', error);
+        console.error('保存认证凭证失败:', error);
         set({ error: '保存认证信息失败，重连时可能需要重新认证' });
         return false;
       }
     },
 
-    restoreFromStorage: async () => {
-      const token = getPairingToken();
+    restoreAuthFromStorage: async () => {
+      const token = getAuthToken();
       if (!token) {
         return false;
       }
 
       try {
-        const keyPair = await restoreKeyPairFromToken(token);
+        const keyPair = await restoreKeyPairFromAuthToken(token);
         set({
           deviceId: token.deviceId,
           daemonId: token.daemonId,
@@ -209,28 +206,28 @@ export const useConnectionStore = create<ConnectionStoreState & ConnectionStoreA
           relayUrl: token.relayUrl,
           accessToken: token.accessToken ?? null,
         });
-        console.log('已从本地存储恢复配对信息');
+        console.log('已从本地存储恢复认证信息');
         return true;
       } catch (error) {
         // C4: 恢复失败时设置错误信息，让用户知晓凭证已被清除
-        console.error('恢复配对信息失败:', error);
-        clearPairingToken();
+        console.error('恢复认证信息失败:', error);
+        clearAuthToken();
         set({
-          _hasSavedPairing: false,
+          _hasSavedAuth: false,
           error: '本地认证信息已损坏，已清除，请重新输入 Access Token',
         });
         return false;
       }
     },
 
-    clearStorage: () => {
-      clearPairingToken();
-      set({ _hasSavedPairing: false });
-      console.log('已清除本地存储的配对信息');
+    clearAuthStorage: () => {
+      clearAuthToken();
+      set({ _hasSavedAuth: false });
+      console.log('已清除本地存储的认证信息');
     },
 
-    hasSavedPairing: () => {
-      return get()._hasSavedPairing;
+    hasSavedAuth: () => {
+      return get()._hasSavedAuth;
     },
 
     setAppMessageHandler: (handler) => set({ appMessageHandler: handler }),

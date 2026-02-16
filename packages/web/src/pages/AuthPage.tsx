@@ -19,7 +19,7 @@ function toErrorMessage(err: unknown, fallback: string): string {
 /**
  * 认证页面组件
  */
-export function PairingPage() {
+export function AuthPage() {
   const navigate = useNavigate();
   const [token, setToken] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -28,11 +28,11 @@ export function PairingPage() {
 
   const { state } = useConnectionStore();
 
-  const { connect, reconnectWithToken, disconnect, authenticate, isConnecting, hasSavedPairing, clearSavedPairing } = useWebSocket({
+  const { connect, reconnectWithToken, disconnect, authenticate, isConnecting, hasSavedAuth, clearSavedAuth } = useWebSocket({
     onConnected: () => {
       setError(null);
     },
-    onPaired: () => {
+    onAuthenticated: () => {
       // 认证成功，跳转到仪表盘
       navigate('/dashboard');
     },
@@ -51,7 +51,7 @@ export function PairingPage() {
       return;
     }
 
-    if (state === 'disconnected' && hasSavedPairing) {
+    if (state === 'disconnected' && hasSavedAuth) {
       autoReconnectAttemptedRef.current = true;
       setIsAutoReconnecting(true);
       setError(null);
@@ -79,11 +79,11 @@ export function PairingPage() {
         setError(toErrorMessage(err, '连接失败'));
       });
     }
-  }, [state, hasSavedPairing, reconnectWithToken, connect]);
+  }, [state, hasSavedAuth, reconnectWithToken, connect]);
 
   // 如果已认证，跳转到仪表盘
   useEffect(() => {
-    if (state === 'paired') {
+    if (state === 'authenticated') {
       navigate('/dashboard');
     }
   }, [state, navigate]);
@@ -110,8 +110,8 @@ export function PairingPage() {
       return;
     }
 
-    if (!token.startsWith('mycc-')) {
-      setError('Access Token 格式无效（应以 mycc- 开头）');
+    if (!token.startsWith('opentermux-')) {
+      setError('Access Token 格式无效（应以 opentermux- 开头）');
       return;
     }
 
@@ -124,8 +124,8 @@ export function PairingPage() {
     }
   }, [token, authenticate]);
 
-  const isAuthenticating = state === 'pairing';
-  const canSubmit = state === 'connected' && token.startsWith('mycc-');
+  const isAuthenticating = state === 'authenticating';
+  const canSubmit = state === 'connected' && token.startsWith('opentermux-');
 
   // 处理回车提交
   const handleKeyDown = useCallback(
@@ -142,7 +142,7 @@ export function PairingPage() {
 
   // 清除保存的认证信息，重新认证
   const handleClearAndReconnect = useCallback(() => {
-    clearSavedPairing();
+    clearSavedAuth();
     setError(null);
     setIsAutoReconnecting(false);
     // 标记为已尝试过，防止 useEffect 再次触发 connect 导致双重连接
@@ -153,7 +153,7 @@ export function PairingPage() {
     connect().catch((err) => {
       setError(toErrorMessage(err, '连接失败'));
     });
-  }, [clearSavedPairing, disconnect, connect]);
+  }, [clearSavedAuth, disconnect, connect]);
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-4">
@@ -174,8 +174,8 @@ export function PairingPage() {
             />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-gray-100 mb-2">MyCC</h1>
-        <p className="text-gray-400">远程控制 Claude Code</p>
+        <h1 className="text-2xl font-bold text-gray-100 mb-2">OpenTermux</h1>
+        <p className="text-gray-400">远程控制终端会话</p>
       </div>
 
       {/* 自动重连提示 */}
@@ -223,7 +223,7 @@ export function PairingPage() {
           <div className="mb-6">
             <input
               type="text"
-              placeholder="mycc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              placeholder="opentermux-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
               value={token}
               onChange={handleInputChange}
               onPaste={handlePaste}
@@ -290,11 +290,11 @@ export function PairingPage() {
 
           {/* 提示 */}
           <p className="text-xs text-center text-gray-500 mt-4">
-            运行 <code className="text-purple-400">mycc start</code> 获取 Access Token
+            运行 <code className="text-purple-400">opentermux start</code> 获取 Access Token
           </p>
 
           {/* 如果有保存的认证信息但自动重连失败，显示清除选项 */}
-          {hasSavedPairing && !isAutoReconnecting && (
+          {hasSavedAuth && !isAutoReconnecting && (
             <div className="mt-4 pt-4 border-t border-gray-800 text-center">
               <button
                 onClick={handleClearAndReconnect}
@@ -310,7 +310,7 @@ export function PairingPage() {
       {/* 帮助链接 */}
       <div className="mt-8 text-center">
         <a
-          href="https://github.com/mycc/mycc"
+          href="<repository-url>"
           target="_blank"
           rel="noopener noreferrer"
           className="text-sm text-gray-500 hover:text-purple-400 transition-colors"

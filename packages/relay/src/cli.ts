@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * @mycc/relay CLI 入口
+ * @opentermux/relay CLI 入口
  *
  * 命令：
- * - relay start      启动中继服务器（后台）
- * - relay start -f   前台运行
- * - relay stop       停止中继服务器
- * - relay status     查看状态
+ * - opentermux-relay start      启动中继服务器（后台）
+ * - opentermux-relay start -f   前台运行
+ * - opentermux-relay stop       停止中继服务器
+ * - opentermux-relay status     查看状态
  */
 
 import { Command } from 'commander';
@@ -16,13 +16,14 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
+import { fetchHealthStatus } from './health-check.js';
 
 // ============================================================================
 // 常量定义
 // ============================================================================
 
 /** 配置目录 */
-const CONFIG_DIR = path.join(os.homedir(), '.mycc');
+const CONFIG_DIR = path.join(os.homedir(), '.opentermux');
 
 /** PID 文件路径 */
 const PID_FILE = path.join(CONFIG_DIR, 'relay.pid');
@@ -91,21 +92,6 @@ function isProcessRunning(pid: number): boolean {
 }
 
 /**
- * 通过健康检查获取服务器状态
- */
-async function fetchHealthStatus(host: string, port: number): Promise<Record<string, unknown> | null> {
-  try {
-    const response = await fetch(`http://${host}:${port}/health`);
-    if (response.ok) {
-      return await response.json() as Record<string, unknown>;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * 通过端口查找监听该端口的进程 PID（Linux/macOS）
  * 只查找 LISTEN 状态的进程，避免误匹配客户端连接
  */
@@ -168,9 +154,9 @@ async function stopProcess(pid: number): Promise<void> {
 const program = new Command();
 
 program
-  .name('mycc-relay')
-  .description('MyCC Relay Server - 中继服务器管理')
-  .version('0.1.0');
+  .name('opentermux-relay')
+  .description('OpenTermux Relay Server - 中继服务器管理')
+  .version('1.0.0');
 
 /**
  * start 命令 - 启动中继服务器
@@ -178,8 +164,8 @@ program
 program
   .command('start')
   .description('启动中继服务器')
-  .option('-p, --port <port>', '监听端口', process.env['PORT'] || String(DEFAULT_PORT))
-  .option('-H, --host <host>', '监听地址', process.env['HOST'] || DEFAULT_HOST)
+  .option('-p, --port <port>', '监听端口', process.env['RELAY_PORT'] || process.env['PORT'] || String(DEFAULT_PORT))
+  .option('-H, --host <host>', '监听地址', process.env['RELAY_HOST'] || DEFAULT_HOST)
   .option('--cert <path>', 'TLS 证书文件路径（启用 HTTPS/WSS）', process.env['TLS_CERT'] || '')
   .option('--key <path>', 'TLS 私钥文件路径（启用 HTTPS/WSS）', process.env['TLS_KEY'] || '')
   .option('-f, --foreground', '前台运行（不作为后台进程）', false)
@@ -289,7 +275,7 @@ program
     const app = createServer({ deviceRegistry });
 
     const protocol = useTls ? 's' : '';
-    console.log(`[Relay] MyCC Relay Server 启动中，地址: ${host}:${port}${useTls ? ' (TLS)' : ''}...`);
+    console.log(`[Relay] OpenTermux Relay Server 启动中，地址: ${host}:${port}${useTls ? ' (TLS)' : ''}...`);
 
     // 启动 HTTP/HTTPS 服务器
     const serveOptions: Parameters<typeof serve>[0] = {
@@ -329,7 +315,7 @@ program
     // 写入 PID 文件
     await writePidFile(process.pid);
 
-    console.log(`[Relay] MyCC Relay Server 已启动`);
+    console.log(`[Relay] OpenTermux Relay Server 已启动`);
     console.log(`[Relay] HTTP${protocol}: http${protocol}://${host}:${port}`);
     console.log(`[Relay] WebSocket: ws${protocol}://${host}:${port}/ws`);
     console.log(`[Relay] 健康检查: http${protocol}://${host}:${port}/health`);
@@ -391,8 +377,8 @@ program
 program
   .command('stop')
   .description('停止中继服务器')
-  .option('-p, --port <port>', '服务器端口（用于查找进程）', process.env['PORT'] || String(DEFAULT_PORT))
-  .option('-H, --host <host>', '服务器地址（用于健康检查）', process.env['HOST'] || DEFAULT_HOST)
+  .option('-p, --port <port>', '服务器端口（用于查找进程）', process.env['RELAY_PORT'] || process.env['PORT'] || String(DEFAULT_PORT))
+  .option('-H, --host <host>', '服务器地址（用于健康检查）', process.env['RELAY_HOST'] || DEFAULT_HOST)
   .action(async (options: { port: string; host: string }) => {
     const port = parseInt(options.port, 10);
     const pid = await readPidFile();
@@ -425,8 +411,8 @@ program
 program
   .command('status')
   .description('查看中继服务器运行状态')
-  .option('-p, --port <port>', '服务器端口（用于健康检查）', String(DEFAULT_PORT))
-  .option('-H, --host <host>', '服务器地址（用于健康检查）', DEFAULT_HOST)
+  .option('-p, --port <port>', '服务器端口（用于健康检查）', process.env['RELAY_PORT'] || process.env['PORT'] || String(DEFAULT_PORT))
+  .option('-H, --host <host>', '服务器地址（用于健康检查）', process.env['RELAY_HOST'] || DEFAULT_HOST)
   .action(async (options: { port: string; host: string }) => {
     const port = parseInt(options.port, 10);
     const host = options.host;

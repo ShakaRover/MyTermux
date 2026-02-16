@@ -8,8 +8,8 @@
  */
 
 import type { WebSocket, RawData } from 'ws';
-import type { TransportMessage, DeviceType } from '@mycc/shared';
-import { isTransportMessage, createTransportMessage } from '@mycc/shared';
+import type { TransportMessage, DeviceType } from '@opentermux/shared';
+import { isTransportMessage, createTransportMessage } from '@opentermux/shared';
 import type { DeviceRegistry } from './device-registry';
 import type { MessageRouter } from './message-router';
 
@@ -206,7 +206,7 @@ export class WebSocketHandler {
     this.deviceRegistry.registerDevice(ws, clientId, payload.deviceType, payload.publicKey);
     this.wsToDeviceId.set(ws, clientId);
 
-    // 使用 Access Token 验证并建立配对
+    // 使用 Access Token 验证并建立认证关系
     const daemonId = this.deviceRegistry.validateAccessToken(payload.accessToken, clientId);
 
     if (daemonId) {
@@ -277,7 +277,7 @@ export class WebSocketHandler {
     const to = message.to;
 
     if (!to) {
-      // 如果没有指定目标，尝试发送给配对设备
+      // 如果没有指定目标，尝试发送给已认证对端
       const result = this.messageRouter.broadcastToPaired(from, message.payload);
       if (!result.success) {
         this.sendError(ws, 'ROUTE_FAILED', result.error || '消息路由失败');
@@ -310,7 +310,7 @@ export class WebSocketHandler {
       // 旧 ws 的 close 事件不应注销新连接的注册信息。
       const currentWs = this.deviceRegistry.getWebSocket(deviceId);
       if (currentWs === ws) {
-        // 通知配对设备
+        // 通知已认证对端设备
         this.messageRouter.notifyPeerDisconnected(deviceId);
 
         // 注销设备

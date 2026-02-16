@@ -1,28 +1,14 @@
 /**
  * 会话状态管理 Store
  *
- * 管理所有活跃会话的状态，包括 Claude 和终端会话
+ * 管理所有活跃终端会话的状态
  */
 
 import { create } from 'zustand';
-import type { SessionInfo, PermissionRequest } from '@mycc/shared';
+import type { SessionInfo } from '@opentermux/shared';
 
-/** 消息类型 */
-export interface ChatMessage {
-  /** 消息 ID */
-  id: string;
-  /** 发送者角色 */
-  role: 'user' | 'assistant' | 'system';
-  /** 消息内容 */
-  content: string;
-  /** 时间戳 */
-  timestamp: number;
-}
-
-/** 会话扩展信息（包含消息历史） */
+/** 会话扩展信息 */
 export interface SessionData extends SessionInfo {
-  /** Claude 会话的消息历史 */
-  messages?: ChatMessage[];
   /** 终端会话的输出缓冲区 */
   terminalBuffer?: string;
 }
@@ -33,8 +19,6 @@ export interface SessionsStoreState {
   sessions: SessionData[];
   /** 当前活跃会话 ID */
   activeSessionId: string | null;
-  /** 待处理的权限请求 */
-  permissionRequests: PermissionRequest[];
   /** 是否正在加载会话列表 */
   isLoading: boolean;
 }
@@ -51,16 +35,8 @@ export interface SessionsStoreActions {
   removeSession: (sessionId: string) => void;
   /** 设置当前活跃会话 */
   setActiveSession: (sessionId: string | null) => void;
-  /** 添加消息到 Claude 会话 */
-  addMessage: (sessionId: string, message: ChatMessage) => void;
   /** 追加终端输出 */
   appendTerminalOutput: (sessionId: string, data: string) => void;
-  /** 添加权限请求 */
-  addPermissionRequest: (request: PermissionRequest) => void;
-  /** 移除权限请求 */
-  removePermissionRequest: (requestId: string) => void;
-  /** 更新权限请求状态 */
-  updatePermissionRequest: (requestId: string, updates: Partial<PermissionRequest>) => void;
   /** 设置加载状态 */
   setLoading: (isLoading: boolean) => void;
   /** 获取当前活跃会话 */
@@ -73,7 +49,6 @@ export interface SessionsStoreActions {
 const initialState: SessionsStoreState = {
   sessions: [],
   activeSessionId: null,
-  permissionRequests: [],
   isLoading: false,
 };
 
@@ -84,28 +59,18 @@ export const useSessionsStore = create<SessionsStoreState & SessionsStoreActions
 
     setSessions: (sessions) =>
       set({
-        sessions: sessions.map((s): SessionData => {
-          // 使用 outputHistory 初始化 terminalBuffer（重连时恢复历史输出）
-          const terminalBuffer = s.outputHistory ?? '';
-          if (s.type === 'claude') {
-            return { ...s, terminalBuffer, messages: [] };
-          }
-          return { ...s, terminalBuffer };
-        }),
+        sessions: sessions.map((s): SessionData => ({
+          ...s,
+          terminalBuffer: s.outputHistory ?? '',
+        })),
       }),
 
     addSession: (session) =>
-      set((state) => {
-        // 所有会话类型都初始化 terminalBuffer
-        const newSession: SessionData = session.type === 'claude'
-          ? { ...session, terminalBuffer: '', messages: [] }
-          : { ...session, terminalBuffer: '' };
-        return {
-          sessions: [...state.sessions, newSession],
-          // 自动切换到新会话
-          activeSessionId: session.id,
-        };
-      }),
+      set((state) => ({
+        sessions: [...state.sessions, { ...session, terminalBuffer: '' }],
+        // 自动切换到新会话
+        activeSessionId: session.id,
+      })),
 
     updateSession: (sessionId, updates) =>
       set((state) => ({
@@ -129,40 +94,12 @@ export const useSessionsStore = create<SessionsStoreState & SessionsStoreActions
 
     setActiveSession: (sessionId) => set({ activeSessionId: sessionId }),
 
-    addMessage: (sessionId, message) =>
-      set((state) => ({
-        sessions: state.sessions.map((s) =>
-          s.id === sessionId && s.messages
-            ? { ...s, messages: [...s.messages, message] }
-            : s
-        ),
-      })),
-
     appendTerminalOutput: (sessionId, data) =>
       set((state) => ({
         sessions: state.sessions.map((s) =>
           s.id === sessionId
             ? { ...s, terminalBuffer: (s.terminalBuffer ?? '') + data }
             : s
-        ),
-      })),
-
-    addPermissionRequest: (request) =>
-      set((state) => ({
-        permissionRequests: [...state.permissionRequests, request],
-      })),
-
-    removePermissionRequest: (requestId) =>
-      set((state) => ({
-        permissionRequests: state.permissionRequests.filter(
-          (r) => r.id !== requestId
-        ),
-      })),
-
-    updatePermissionRequest: (requestId, updates) =>
-      set((state) => ({
-        permissionRequests: state.permissionRequests.map((r) =>
-          r.id === requestId ? { ...r, ...updates } : r
         ),
       })),
 

@@ -23,7 +23,7 @@ importers:
 
   packages/daemon:
     dependencies:
-      '@mycc/shared':
+      '@opentermux/shared':
         specifier: workspace:*
         version: link:../shared
       commander:
@@ -51,7 +51,7 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.0
         version: 1.19.9(hono@4.11.9)
-      '@mycc/shared':
+      '@opentermux/shared':
         specifier: workspace:*
         version: link:../shared
       commander:
@@ -85,7 +85,7 @@ importers:
 
   packages/web:
     dependencies:
-      '@mycc/shared':
+      '@opentermux/shared':
         specifier: workspace:*
         version: link:../shared
       '@xterm/addon-fit':

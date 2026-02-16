@@ -1,5 +1,5 @@
 /**
- * @mycc/relay 中继服务器入口
+ * @opentermux/relay 中继服务器入口
  *
  * 功能：
  * - 启动 HTTP 服务器（Hono + @hono/node-server）
@@ -27,7 +27,7 @@ const wsHandler = new WebSocketHandler(deviceRegistry, messageRouter);
 // 创建 Hono 应用
 const app = createServer({ deviceRegistry });
 
-console.log(`[Relay] MyCC Relay Server 启动中，地址: ${hostname}:${port}...`);
+console.log(`[Relay] OpenTermux Relay Server 启动中，地址: ${hostname}:${port}...`);
 
 // 启动 HTTP 服务器
 const httpServer = serve({
@@ -53,7 +53,7 @@ wss.on('error', (error) => {
   console.error('[Relay] WebSocket 服务器错误:', error);
 });
 
-console.log(`[Relay] MyCC Relay Server 已启动`);
+console.log(`[Relay] OpenTermux Relay Server 已启动`);
 console.log(`[Relay] HTTP: http://${hostname}:${port}`);
 console.log(`[Relay] WebSocket: ws://${hostname}:${port}/ws`);
 console.log(`[Relay] 健康检查: http://${hostname}:${port}/health`);

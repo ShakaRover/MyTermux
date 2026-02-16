@@ -5,7 +5,7 @@
  */
 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { PairingPage } from './pages/PairingPage';
+import { AuthPage } from './pages/AuthPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { useConnectionStore } from './stores/connectionStore';
 
@@ -17,8 +17,8 @@ import { useConnectionStore } from './stores/connectionStore';
 function RootRedirect() {
   const { state } = useConnectionStore();
 
-  // 如果已配对，跳转到仪表盘
-  if (state === 'paired') {
+  // 如果已认证，跳转到仪表盘
+  if (state === 'authenticated') {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -37,10 +37,7 @@ function App() {
         <Route path="/" element={<RootRedirect />} />
 
         {/* 认证页面 */}
-        <Route path="/auth" element={<PairingPage />} />
-
-        {/* 兼容旧路径 /pair → /auth */}
-        <Route path="/pair" element={<Navigate to="/auth" replace />} />
+        <Route path="/auth" element={<AuthPage />} />
 
         {/* 仪表盘页面 */}
         <Route path="/dashboard" element={<DashboardPage />} />

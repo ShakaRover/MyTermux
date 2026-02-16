@@ -9,12 +9,12 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import type { KeyPair } from '@mycc/shared';
+import type { KeyPair } from '@opentermux/shared';
 import {
   generateAccessToken,
   generateKeyPair,
   deriveSharedSecret,
-} from '@mycc/shared';
+} from '@opentermux/shared';
 
 // ============================================================================
 // 类型定义
@@ -47,7 +47,7 @@ interface AuthData {
 }
 
 /** 认证管理器事件 */
-export interface PairingManagerEvents {
+export interface AuthManagerEvents {
   /** Token 已生成 */
   tokenGenerated: (token: string) => void;
   /** 客户端认证成功 */
@@ -59,10 +59,10 @@ export interface PairingManagerEvents {
 // ============================================================================
 
 /** 配置文件目录 */
-const CONFIG_DIR = path.join(os.homedir(), '.mycc');
+const CONFIG_DIR = path.join(os.homedir(), '.opentermux');
 
 /** 认证数据文件路径 */
-const AUTH_DATA_FILE = path.join(CONFIG_DIR, 'pairing.json');
+const AUTH_DATA_FILE = path.join(CONFIG_DIR, 'auth.json');
 
 // ============================================================================
 // 导出工具函数
@@ -85,15 +85,8 @@ export async function readAccessToken(): Promise<{ token: string; migrated: bool
 
   // 兼容旧版：补充 accessToken
   if (!data.accessToken) {
-    const { generateAccessToken } = await import('@mycc/shared');
+    const { generateAccessToken } = await import('@opentermux/shared');
     data.accessToken = generateAccessToken();
-    migrated = true;
-  }
-
-  // 兼容旧版字段名
-  if (!data.authenticatedClients && data.pairedClients) {
-    data.authenticatedClients = data.pairedClients;
-    delete data.pairedClients;
     migrated = true;
   }
 
@@ -112,19 +105,13 @@ export async function readAccessToken(): Promise<{ token: string; migrated: bool
 /**
  * 认证管理器
  *
- * 历史兼容：类名保留为 PairingManager（原为配对管理器），
- * 避免外部引用（如 daemon.ts、ws-client.ts、测试文件）需要同步重命名。
- * 实际功能已迁移为 Access Token 认证模式：
- * - 方法名 completePairing/isPaired/getPairedClients 等保留旧命名
- * - 数据文件名 pairing.json 保留，确保版本升级时无需用户干预
- *
  * 特性：
  * - 生成和管理 Access Token
  * - 处理客户端认证
  * - 管理密钥存储
  * - 派生共享密钥用于 E2E 加密
  */
-export class PairingManager extends EventEmitter {
+export class AuthManager extends EventEmitter {
   /** Access Token */
   private _accessToken: string = '';
   /** 本地密钥对 */
@@ -217,7 +204,7 @@ export class PairingManager extends EventEmitter {
    * @param clientPublicKey 客户端公钥
    * @param clientName 客户端名称（可选）
    */
-  async completePairing(
+  async completeAuthentication(
     clientId: string,
     clientPublicKey: string,
     clientName?: string
@@ -280,7 +267,7 @@ export class PairingManager extends EventEmitter {
    * 检查客户端是否已认证
    * @param clientId 客户端 ID
    */
-  isPaired(clientId: string): boolean {
+  isAuthenticated(clientId: string): boolean {
     return this.authenticatedClients.some((c) => c.clientId === clientId);
   }
 
@@ -317,7 +304,7 @@ export class PairingManager extends EventEmitter {
    * 移除客户端认证
    * @param clientId 客户端 ID
    */
-  async removePairing(clientId: string): Promise<void> {
+  async removeAuthentication(clientId: string): Promise<void> {
     const index = this.authenticatedClients.findIndex((c) => c.clientId === clientId);
     if (index >= 0) {
       this.authenticatedClients.splice(index, 1);
@@ -329,7 +316,7 @@ export class PairingManager extends EventEmitter {
   /**
    * 获取所有已认证的客户端
    */
-  getPairedClients(): AuthenticatedClient[] {
+  getAuthenticatedClients(): AuthenticatedClient[] {
     return [...this.authenticatedClients];
   }
 
@@ -391,10 +378,8 @@ export class PairingManager extends EventEmitter {
     if (!data.accessToken) {
       data.accessToken = generateAccessToken();
     }
-    // 旧版字段名为 pairedClients，新版为 authenticatedClients
-    const dataAsRecord = data as unknown as Record<string, unknown>;
-    if (!data.authenticatedClients && dataAsRecord['pairedClients']) {
-      data.authenticatedClients = dataAsRecord['pairedClients'] as AuthenticatedClient[];
+    if (!Array.isArray(data.authenticatedClients)) {
+      data.authenticatedClients = [];
     }
     return data;
   }
@@ -450,9 +435,9 @@ export class PairingManager extends EventEmitter {
 // ============================================================================
 
 // 为 EventEmitter 添加类型支持
-export declare interface PairingManager {
-  on<K extends keyof PairingManagerEvents>(event: K, listener: PairingManagerEvents[K]): this;
-  emit<K extends keyof PairingManagerEvents>(event: K, ...args: Parameters<PairingManagerEvents[K]>): boolean;
-  off<K extends keyof PairingManagerEvents>(event: K, listener: PairingManagerEvents[K]): this;
-  once<K extends keyof PairingManagerEvents>(event: K, listener: PairingManagerEvents[K]): this;
+export declare interface AuthManager {
+  on<K extends keyof AuthManagerEvents>(event: K, listener: AuthManagerEvents[K]): this;
+  emit<K extends keyof AuthManagerEvents>(event: K, ...args: Parameters<AuthManagerEvents[K]>): boolean;
+  off<K extends keyof AuthManagerEvents>(event: K, listener: AuthManagerEvents[K]): this;
+  once<K extends keyof AuthManagerEvents>(event: K, listener: AuthManagerEvents[K]): this;
 }

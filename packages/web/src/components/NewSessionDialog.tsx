@@ -1,11 +1,10 @@
 /**
  * 新建会话对话框组件
  *
- * 用于创建新的 Claude 或终端会话
+ * 用于创建新的终端会话
  */
 
 import { useState, useCallback } from 'react';
-import type { SessionType } from '@mycc/shared';
 
 /** 新建会话对话框 Props */
 export interface NewSessionDialogProps {
@@ -14,7 +13,7 @@ export interface NewSessionDialogProps {
   /** 关闭回调 */
   onClose: () => void;
   /** 创建会话回调 */
-  onCreate: (type: SessionType, cwd?: string) => void;
+  onCreate: (cwd?: string) => void;
   /** 额外的 CSS 类名 */
   className?: string;
 }
@@ -28,20 +27,17 @@ export function NewSessionDialog({
   onCreate,
   className = '',
 }: NewSessionDialogProps) {
-  const [selectedType, setSelectedType] = useState<SessionType>('claude');
   const [cwd, setCwd] = useState('');
 
   const handleCreate = useCallback(() => {
-    onCreate(selectedType, cwd.trim() || undefined);
+    onCreate(cwd.trim() || undefined);
     // 重置表单
-    setSelectedType('claude');
     setCwd('');
     onClose();
-  }, [selectedType, cwd, onCreate, onClose]);
+  }, [cwd, onCreate, onClose]);
 
   const handleClose = useCallback(() => {
     // 重置表单
-    setSelectedType('claude');
     setCwd('');
     onClose();
   }, [onClose]);
@@ -84,61 +80,16 @@ export function NewSessionDialog({
           </button>
         </div>
 
-        {/* 会话类型选择 */}
+        {/* 会话模式说明 */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-300 mb-3">
-            会话类型
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            会话模式
           </label>
-          <div className="grid grid-cols-2 gap-3">
-            {/* Claude 选项 */}
-            <button
-              onClick={() => setSelectedType('claude')}
-              className={`
-                flex flex-col items-center gap-2 p-4 rounded-xl border
-                transition-all duration-200
-                ${
-                  selectedType === 'claude'
-                    ? 'bg-purple-900/40 border-purple-500 text-purple-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
-                }
-              `}
-            >
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                />
-              </svg>
-              <span className="font-medium">Claude</span>
-              <span className="text-xs opacity-60">AI 对话</span>
-            </button>
-
-            {/* 终端选项 */}
-            <button
-              onClick={() => setSelectedType('terminal')}
-              className={`
-                flex flex-col items-center gap-2 p-4 rounded-xl border
-                transition-all duration-200
-                ${
-                  selectedType === 'terminal'
-                    ? 'bg-emerald-900/40 border-emerald-500 text-emerald-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600'
-                }
-              `}
-            >
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                />
-              </svg>
-              <span className="font-medium">终端</span>
-              <span className="text-xs opacity-60">Shell 命令</span>
-            </button>
+          <div className="p-3 rounded-lg border border-gray-700 bg-gray-800/70 text-gray-300">
+            <p className="text-sm font-medium text-emerald-300">统一终端会话</p>
+            <p className="text-xs text-gray-400 mt-1">
+              在会话中可直接运行任意 CLI 命令。
+            </p>
           </div>
         </div>
 
@@ -178,16 +129,12 @@ export function NewSessionDialog({
           </button>
           <button
             onClick={handleCreate}
-            className={`
+            className="
               flex-1 px-4 py-2.5 rounded-lg
-              border font-medium
+              border border-emerald-500 font-medium
+              bg-emerald-600 text-white hover:bg-emerald-500
               transition-all duration-200
-              ${
-                selectedType === 'claude'
-                  ? 'bg-purple-600 border-purple-500 text-white hover:bg-purple-500'
-                  : 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-500'
-              }
-            `}
+            "
           >
             创建
           </button>

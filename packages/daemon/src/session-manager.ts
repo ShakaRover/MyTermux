@@ -1,7 +1,7 @@
 /**
  * 会话管理器
  *
- * 统一管理所有 Claude 和 Terminal 会话
+ * 统一管理终端会话
  */
 
 import { EventEmitter } from 'events';
@@ -10,19 +10,16 @@ import type {
   SessionType,
   SessionInfo,
   SessionOptions,
-  ClaudeSessionOptions,
   TerminalSessionOptions,
-  PermissionRequest,
-} from '@mycc/shared';
-import { ClaudeSession } from './claude-session.js';
+} from '@opentermux/shared';
 import { TerminalSession } from './terminal-session.js';
 
 // ============================================================================
 // 类型定义
 // ============================================================================
 
-/** 会话联合类型 */
-export type Session = ClaudeSession | TerminalSession;
+/** 会话类型 */
+export type Session = TerminalSession;
 
 /** 会话管理器事件 */
 export interface SessionManagerEvents {
@@ -32,8 +29,6 @@ export interface SessionManagerEvents {
   sessionClosed: (sessionId: string, reason?: string) => void;
   /** 会话输出 */
   sessionOutput: (sessionId: string, data: string) => void;
-  /** 权限请求 */
-  permissionRequest: (request: PermissionRequest) => void;
   /** 发生错误 */
   error: (sessionId: string, error: Error) => void;
 }
@@ -46,7 +41,7 @@ export interface SessionManagerEvents {
  * 会话管理器
  *
  * 特性：
- * - 统一管理所有 Claude + Terminal 会话
+ * - 统一管理终端会话
  * - 支持创建、列出、关闭会话
  * - 监听会话输出事件并向上传递
  */
@@ -64,26 +59,18 @@ export class SessionManager extends EventEmitter {
 
   /**
    * 创建会话
-   * @param type 会话类型
+   * @param _type 会话类型（当前仅支持 terminal）
    * @param options 会话选项
    * @returns 会话信息
    */
   async createSession(
-    type: SessionType,
+    _type: SessionType,
     options?: SessionOptions
   ): Promise<SessionInfo> {
     const id = randomUUID();
+    const session = new TerminalSession(id, options as TerminalSessionOptions | undefined);
 
-    let session: Session;
-
-    if (type === 'claude') {
-      session = new ClaudeSession(id, options as ClaudeSessionOptions);
-      this.setupClaudeSessionListeners(session);
-    } else {
-      session = new TerminalSession(id, options as TerminalSessionOptions);
-      this.setupTerminalSessionListeners(session);
-    }
-
+    this.setupTerminalSessionListeners(session);
     this.sessions.set(id, session);
 
     try {
@@ -176,24 +163,6 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * 响应权限请求
-   * @param sessionId 会话 ID
-   * @param approved 是否批准
-   */
-  respondToPermission(sessionId: string, approved: boolean): void {
-    const session = this.sessions.get(sessionId);
-    if (!session || !(session instanceof ClaudeSession)) {
-      throw new Error(`Claude 会话不存在: ${sessionId}`);
-    }
-
-    if (approved) {
-      session.approvePermission();
-    } else {
-      session.rejectPermission();
-    }
-  }
-
-  /**
    * 获取会话数量
    */
   get sessionCount(): number {
@@ -203,28 +172,6 @@ export class SessionManager extends EventEmitter {
   // --------------------------------------------------------------------------
   // 私有方法
   // --------------------------------------------------------------------------
-
-  /**
-   * 设置 Claude 会话监听器
-   */
-  private setupClaudeSessionListeners(session: ClaudeSession): void {
-    session.on('data', (data: string) => {
-      this.emit('sessionOutput', session.id, data);
-    });
-
-    session.on('permissionRequest', (request: PermissionRequest) => {
-      this.emit('permissionRequest', request);
-    });
-
-    session.on('exit', (_code: number) => {
-      this.sessions.delete(session.id);
-      this.emit('sessionClosed', session.id, 'Session exited');
-    });
-
-    session.on('error', (error: Error) => {
-      this.emit('error', session.id, error);
-    });
-  }
 
   /**
    * 设置终端会话监听器

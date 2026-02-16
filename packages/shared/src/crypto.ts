@@ -226,12 +226,12 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
 
 /**
  * 生成 Access Token（用于 daemon 授权客户端连接）
- * 格式：mycc-<32 个十六进制字符>（128 位随机熵，总长度 37 字符）
+ * 格式：opentermux-<32 个十六进制字符>（128 位随机熵，总长度 37 字符）
  */
 export function generateAccessToken(): string {
   const array = crypto.getRandomValues(new Uint8Array(16));
   const hex = Array.from(array)
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
-  return `mycc-${hex}`;
+  return `opentermux-${hex}`;
 }

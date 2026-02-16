@@ -6,14 +6,12 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { SessionType } from '@mycc/shared';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useSessionsStore } from '../stores/sessionsStore';
 import { useSessions } from '../hooks/useSessions';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { SessionList } from '../components/SessionList';
 import { TerminalView } from '../components/TerminalView';
-import { PermissionDialog } from '../components/PermissionDialog';
 import { NewSessionDialog } from '../components/NewSessionDialog';
 
 /**
@@ -25,7 +23,7 @@ export function DashboardPage() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const { state: connectionState, disconnect } = useConnectionStore();
-  const { sessions, activeSessionId, permissionRequests, getActiveSession } =
+  const { sessions, activeSessionId, getActiveSession } =
     useSessionsStore();
 
   const {
@@ -34,19 +32,18 @@ export function DashboardPage() {
     refreshSessions,
     sendInput,
     resizeTerminal,
-    respondPermission,
   } = useSessions();
 
-  // 如果未配对，跳转到配对页面
+  // 如果未认证，跳转到认证页面
   useEffect(() => {
-    if (connectionState !== 'paired') {
-      navigate('/pair');
+    if (connectionState !== 'authenticated') {
+      navigate('/auth');
     }
   }, [connectionState, navigate]);
 
-  // 配对成功后刷新会话列表
+  // 认证成功后刷新会话列表
   useEffect(() => {
-    if (connectionState === 'paired') {
+    if (connectionState === 'authenticated') {
       refreshSessions().catch(console.error);
     }
   }, [connectionState, refreshSessions]);
@@ -57,14 +54,14 @@ export function DashboardPage() {
   // 处理断开连接
   const handleDisconnect = useCallback(() => {
     disconnect();
-    navigate('/pair');
+    navigate('/auth');
   }, [disconnect, navigate]);
 
   // 处理创建会话
   const handleCreateSession = useCallback(
-    async (type: SessionType, cwd?: string) => {
+    async (cwd?: string) => {
       try {
-        await createSession(type, cwd ? { cwd } : undefined);
+        await createSession(cwd ? { cwd } : undefined);
       } catch (err) {
         console.error('创建会话失败:', err);
       }
@@ -110,36 +107,6 @@ export function DashboardPage() {
     [activeSessionId, resizeTerminal]
   );
 
-  // 处理权限审批
-  const handlePermissionApprove = useCallback(
-    async (requestId: string) => {
-      const request = permissionRequests.find((r) => r.id === requestId);
-      if (!request) return;
-      try {
-        await respondPermission(request.sessionId, requestId, true);
-      } catch (err) {
-        console.error('审批权限失败:', err);
-      }
-    },
-    [permissionRequests, respondPermission]
-  );
-
-  const handlePermissionReject = useCallback(
-    async (requestId: string) => {
-      const request = permissionRequests.find((r) => r.id === requestId);
-      if (!request) return;
-      try {
-        await respondPermission(request.sessionId, requestId, false);
-      } catch (err) {
-        console.error('拒绝权限失败:', err);
-      }
-    },
-    [permissionRequests, respondPermission]
-  );
-
-  // 当前待处理的权限请求
-  const currentPermissionRequest = permissionRequests[0];
-
   return (
     <div className="h-screen bg-gray-950 flex overflow-hidden">
       {/* 侧边栏 */}
@@ -164,7 +131,7 @@ export function DashboardPage() {
                   />
                 </svg>
               </div>
-              <span className="font-semibold text-gray-100">MyCC</span>
+              <span className="font-semibold text-gray-100">OpenTermux</span>
             </div>
           )}
           <button
@@ -257,21 +224,10 @@ export function DashboardPage() {
                 `}
                 title={session.title}
               >
-                <div
-                  className={`
-                    p-1 rounded-md
-                    ${session.type === 'claude' ? 'text-purple-400' : 'text-emerald-400'}
-                  `}
-                >
-                  {session.type === 'claude' ? (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  )}
+                <div className="p-1 rounded-md text-emerald-400">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
                 </div>
               </button>
             ))}
@@ -324,41 +280,19 @@ export function DashboardPage() {
             {/* 会话头部 */}
             <header className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-900/50">
               <div className="flex items-center gap-3">
-                <div
-                  className={`
-                    p-2 rounded-lg
-                    ${
-                      activeSession.type === 'claude'
-                        ? 'bg-purple-900/50 text-purple-400'
-                        : 'bg-emerald-900/50 text-emerald-400'
-                    }
-                  `}
-                >
-                  {activeSession.type === 'claude' ? (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                      />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                      />
-                    </svg>
-                  )}
+                <div className="p-2 rounded-lg bg-emerald-900/50 text-emerald-400">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
                 </div>
                 <div>
                   <h2 className="font-medium text-gray-100">{activeSession.title}</h2>
-                  <p className="text-xs text-gray-500">
-                    {activeSession.type === 'claude' ? 'Claude 对话' : '终端会话'}
-                  </p>
+                  <p className="text-xs text-gray-500">终端会话</p>
                 </div>
               </div>
               <button
@@ -377,7 +311,7 @@ export function DashboardPage() {
               </button>
             </header>
 
-            {/* 会话内容 - Claude Code 和终端都是 TUI 程序，统一使用 TerminalView */}
+            {/* 会话内容统一使用 TerminalView */}
             <div className="flex-1 overflow-hidden">
               <TerminalView
                 sessionId={activeSession.id}
@@ -409,7 +343,7 @@ export function DashboardPage() {
             </h3>
             <p className="text-sm text-gray-500 mb-6">
               {sessions.length === 0
-                ? '创建一个新的 Claude 对话或终端会话'
+                ? '创建一个新的终端会话（可直接运行 CLI 工具）'
                 : '从左侧列表选择一个会话，或创建新会话'}
             </p>
             <button
@@ -440,15 +374,6 @@ export function DashboardPage() {
         onClose={() => setIsNewSessionDialogOpen(false)}
         onCreate={handleCreateSession}
       />
-
-      {/* 权限审批弹窗 */}
-      {currentPermissionRequest && (
-        <PermissionDialog
-          request={currentPermissionRequest}
-          onApprove={handlePermissionApprove}
-          onReject={handlePermissionReject}
-        />
-      )}
     </div>
   );
 }

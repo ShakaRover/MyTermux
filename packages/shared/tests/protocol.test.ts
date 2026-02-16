@@ -81,7 +81,7 @@ describe('Protocol Module', () => {
       const message: TransportMessage = {
         type: 'token_auth',
         from: 'client-123',
-        payload: JSON.stringify({ deviceType: 'client', publicKey: 'key', accessToken: 'mycc-abc' }),
+        payload: JSON.stringify({ deviceType: 'client', publicKey: 'key', accessToken: 'opentermux-abc' }),
         timestamp: Date.now(),
       };
 
@@ -112,7 +112,7 @@ describe('Protocol Module', () => {
     it('should return true for valid app messages', () => {
       const message: SessionCreateMessage = {
         action: 'session:create',
-        sessionType: 'claude',
+        sessionType: 'terminal',
       };
 
       expect(isAppMessage(message)).toBe(true);

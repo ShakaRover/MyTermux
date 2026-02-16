@@ -2,13 +2,13 @@
  * 消息路由模块
  *
  * 功能：
- * - 在已配对设备之间路由消息
+ * - 在已认证设备之间路由消息
  * - 只转发加密消息，不解密
  * - 验证消息来源和目标
  */
 
-import type { TransportMessage } from '@mycc/shared';
-import { createTransportMessage } from '@mycc/shared';
+import type { TransportMessage } from '@opentermux/shared';
+import { createTransportMessage } from '@opentermux/shared';
 import type { DeviceRegistry } from './device-registry';
 
 /** 路由结果 */
@@ -52,10 +52,10 @@ export class MessageRouter {
       return { success: false, error: '接收者设备未连接' };
     }
 
-    // 验证配对关系
-    if (!this.deviceRegistry.arePaired(from, to)) {
-      console.log(`[MessageRouter] 设备未配对: ${from} <-> ${to}`);
-      return { success: false, error: '设备未配对' };
+    // 验证认证关系
+    if (!this.deviceRegistry.arePeersAuthenticated(from, to)) {
+      console.log(`[MessageRouter] 设备未认证: ${from} <-> ${to}`);
+      return { success: false, error: '设备未认证' };
     }
 
     // 构造传输层消息
@@ -72,25 +72,25 @@ export class MessageRouter {
   }
 
   /**
-   * 广播消息到所有配对设备
+   * 广播消息到所有已认证对端设备
    *
    * @param from 发送者设备 ID
    * @param payload 消息载荷
    * @returns 路由结果
    */
   broadcastToPaired(from: string, payload: string): RouteResult {
-    const pairedDeviceIds = this.deviceRegistry.getPairedDeviceIds(from);
+    const authenticatedPeerIds = this.deviceRegistry.getAuthenticatedPeerIds(from);
 
-    if (!pairedDeviceIds || pairedDeviceIds.size === 0) {
-      console.log(`[MessageRouter] 设备未配对，无法广播: ${from}`);
-      return { success: false, error: '设备未配对' };
+    if (!authenticatedPeerIds || authenticatedPeerIds.size === 0) {
+      console.log(`[MessageRouter] 设备未认证，无法广播: ${from}`);
+      return { success: false, error: '设备未认证' };
     }
 
     let lastError: string | undefined;
     let anySuccess = false;
 
-    for (const pairedId of pairedDeviceIds) {
-      const result = this.routeMessage(from, pairedId, payload);
+    for (const peerId of authenticatedPeerIds) {
+      const result = this.routeMessage(from, peerId, payload);
       if (result.success) {
         anySuccess = true;
       } else {
@@ -181,21 +181,21 @@ export class MessageRouter {
   }
 
   /**
-   * 通知配对设备对方已断开
+   * 通知已认证对端设备对方已断开
    *
    * @param disconnectedDeviceId 断开连接的设备 ID
    */
   notifyPeerDisconnected(disconnectedDeviceId: string): void {
-    const pairedDeviceIds = this.deviceRegistry.getPairedDeviceIds(disconnectedDeviceId);
-    if (pairedDeviceIds) {
-      for (const pairedId of pairedDeviceIds) {
+    const authenticatedPeerIds = this.deviceRegistry.getAuthenticatedPeerIds(disconnectedDeviceId);
+    if (authenticatedPeerIds) {
+      for (const peerId of authenticatedPeerIds) {
         // 使用结构化 payload 传递 disconnectedDeviceId，避免接收方依赖正则解析
         const payload = JSON.stringify({
           code: 'PEER_DISCONNECTED',
-          message: `配对设备已断开连接: ${disconnectedDeviceId}`,
+          message: `认证设备已断开连接: ${disconnectedDeviceId}`,
           deviceId: disconnectedDeviceId,
         });
-        this.sendSystemMessage(pairedId, 'error', payload);
+        this.sendSystemMessage(peerId, 'error', payload);
       }
     }
   }

@@ -122,7 +122,7 @@ describe('Crypto Module', () => {
 
       const data = {
         action: 'session:create',
-        sessionType: 'claude',
+        sessionType: 'terminal',
         options: { cwd: '/home/user' },
       };
 
@@ -135,10 +135,10 @@ describe('Crypto Module', () => {
   });
 
   describe('generateAccessToken', () => {
-    it('should generate a token with mycc- prefix and 32 hex chars', () => {
+    it('should generate a token with opentermux- prefix and 32 hex chars', () => {
       const token = generateAccessToken();
 
-      expect(token).toMatch(/^mycc-[0-9a-f]{32}$/);
+      expect(token).toMatch(/^opentermux-[0-9a-f]{32}$/);
     });
 
     it('should generate unique tokens each time', () => {

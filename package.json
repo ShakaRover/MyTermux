@@ -1,11 +1,9 @@
 {
-  "name": "mycc",
-  "version": "0.1.0",
+  "name": "opentermux",
+  "version": "1.0.0",
   "private": true,
-  "description": "远程控制 Claude Code - 通过 Web 界面随时随地查看和控制本地电脑上的 Claude Code 和终端会话",
+  "description": "远程控制终端会话 - 通过 Web 界面随时随地查看和控制本地电脑上的终端会话",
   "keywords": [
-    "claude",
-    "claude-code",
     "remote-control",
     "terminal",
     "daemon"

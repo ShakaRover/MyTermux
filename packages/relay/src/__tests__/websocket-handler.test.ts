@@ -12,7 +12,7 @@ import { EventEmitter } from 'events';
 import { WebSocketHandler } from '../websocket-handler';
 import type { DeviceRegistry } from '../device-registry';
 import type { MessageRouter } from '../message-router';
-import { createTransportMessage } from '@mycc/shared';
+import { createTransportMessage } from '@opentermux/shared';
 
 // ============================================================================
 // Mock 工具
@@ -39,8 +39,8 @@ function createMockRegistry(): DeviceRegistry {
     getPublicKey: vi.fn(),
     validateAccessToken: vi.fn(),
     updateHeartbeat: vi.fn(),
-    arePaired: vi.fn(),
-    getPairedDeviceIds: vi.fn(),
+    arePeersAuthenticated: vi.fn(),
+    getAuthenticatedPeerIds: vi.fn(),
     getAllDeviceIds: vi.fn(),
     getStats: vi.fn(),
     startCleanupTimer: vi.fn(),
@@ -111,7 +111,7 @@ describe('WebSocketHandler', () => {
   // --------------------------------------------------------------------------
 
   describe('handleClose - ws 身份检查', () => {
-    it('当前 ws 关闭时应注销设备并通知配对设备', () => {
+    it('当前 ws 关闭时应注销设备并通知已认证对端设备', () => {
       const ws = createMockWs();
       handler.handleConnection(ws);
 
@@ -124,7 +124,7 @@ describe('WebSocketHandler', () => {
       // 触发关闭
       triggerClose(ws, 1000, '正常关闭');
 
-      // 应该通知配对设备并注销
+      // 应该通知已认证对端设备并注销
       expect(router.notifyPeerDisconnected).toHaveBeenCalledWith('client-1');
       expect(registry.unregisterDevice).toHaveBeenCalledWith('client-1');
     });

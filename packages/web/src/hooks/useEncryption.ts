@@ -11,7 +11,7 @@ import {
   encryptJson,
   decryptJson,
   type KeyPair,
-} from '@mycc/shared';
+} from '@opentermux/shared';
 import { useConnectionStore } from '../stores/connectionStore';
 
 /** 加密 Hook 返回值 */

@@ -10,8 +10,8 @@ import type {
   TransportMessage,
   TransportMessageType,
   DeviceType,
-} from '@mycc/shared';
-import { createTransportMessage } from '@mycc/shared';
+} from '@opentermux/shared';
+import { createTransportMessage } from '@opentermux/shared';
 
 // ============================================================================
 // 类型定义

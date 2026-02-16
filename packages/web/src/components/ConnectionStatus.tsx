@@ -27,14 +27,14 @@ const stateConfig: Record<
     color: 'text-blue-400',
     bgColor: 'bg-blue-500',
   },
-  pairing: {
-    label: '配对中...',
+  authenticating: {
+    label: '认证中...',
     color: 'text-yellow-400',
     bgColor: 'bg-yellow-500',
     pulse: true,
   },
-  paired: {
-    label: '已配对',
+  authenticated: {
+    label: '已认证',
     color: 'text-green-400',
     bgColor: 'bg-green-500',
   },
@@ -91,7 +91,7 @@ export function ConnectionStatus({
       {/* 详细信息 */}
       {showDetails && (
         <div className="ml-2 text-xs text-gray-500">
-          {state === 'paired' && daemonId && (
+          {state === 'authenticated' && daemonId && (
             <span>Daemon: {daemonId.slice(0, 8)}...</span>
           )}
           {state === 'error' && error && (

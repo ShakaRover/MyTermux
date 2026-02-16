@@ -36,7 +36,7 @@ export function createServer(options: ServerOptions = {}) {
     return c.json({
       status: 'ok',
       timestamp: Date.now(),
-      version: '0.1.0',
+      version: '1.0.0',
       connections: stats ?? { daemons: 0, clients: 0, accessTokens: 0 },
     });
   });
@@ -53,8 +53,8 @@ export function createServer(options: ServerOptions = {}) {
   // API 文档/信息
   app.get('/', (c) => {
     return c.json({
-      name: 'MyCC Relay Server',
-      version: '0.1.0',
+      name: 'OpenTermux Relay Server',
+      version: '1.0.0',
       endpoints: {
         '/health': 'GET - 健康检查',
         '/ws': 'WebSocket - 设备连接端点',

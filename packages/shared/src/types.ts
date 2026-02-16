@@ -7,7 +7,7 @@
 // ============================================================================
 
 /** 会话类型枚举 */
-export type SessionType = 'claude' | 'terminal';
+export type SessionType = 'terminal';
 
 /** 会话状态枚举 */
 export type SessionStatus = 'starting' | 'running' | 'stopped' | 'error';
@@ -28,16 +28,6 @@ export interface SessionInfo {
   outputHistory?: string;
 }
 
-/** Claude 会话配置 */
-export interface ClaudeSessionOptions {
-  /** 工作目录 */
-  cwd?: string;
-  /** 模型选择 */
-  model?: string;
-  /** 初始提示词 */
-  initialPrompt?: string;
-}
-
 /** 终端会话配置 */
 export interface TerminalSessionOptions {
   /** 工作目录 */
@@ -51,30 +41,7 @@ export interface TerminalSessionOptions {
 }
 
 /** 会话创建选项 */
-export type SessionOptions = ClaudeSessionOptions | TerminalSessionOptions;
-
-// ============================================================================
-// 权限请求类型
-// ============================================================================
-
-/** 权限请求状态 */
-export type PermissionStatus = 'pending' | 'approved' | 'rejected';
-
-/** 权限请求信息 */
-export interface PermissionRequest {
-  /** 请求唯一标识 */
-  id: string;
-  /** 所属会话 ID */
-  sessionId: string;
-  /** 工具名称 */
-  tool: string;
-  /** 工具描述 */
-  description: string;
-  /** 请求状态 */
-  status: PermissionStatus;
-  /** 请求时间戳 */
-  requestedAt: number;
-}
+export type SessionOptions = TerminalSessionOptions;
 
 // ============================================================================
 // 设备类型

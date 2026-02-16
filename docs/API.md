@@ -1,44 +1,268 @@
-# MyCC API 文档
+# OpenTermux API 文档
 
-## 概述
+本文档描述 OpenTermux 当前实现的通信协议与服务接口。
 
-MyCC 使用两层消息协议：
-- **传输层** - 中继服务器可见，用于路由
-- **应用层** - E2E 加密，中继服务器无法解密
+- 产品：OpenTermux
+- 定位：Web 远程终端
+- 版本：1.0.0
 
-## HTTP API
+## 总览
 
-### 健康检查
+OpenTermux 协议分两层：
 
+1. 传输层（Relay 可见）
+2. 应用层（E2E 加密，Relay 不解密）
+
+## 传输层协议（WebSocket）
+
+### 连接地址
+
+- Relay WebSocket：`ws://<host>:<port>/ws`
+- TLS：`wss://<host>:<port>/ws`
+
+### 通用结构
+
+```ts
+interface TransportMessage {
+  type: 'register' | 'token_auth' | 'token_ack' | 'message' | 'heartbeat' | 'error';
+  from: string;
+  to?: string;
+  payload: string;
+  timestamp: number;
+}
 ```
-GET /health
-```
 
-**响应：**
+### `register`
+
+设备注册。
+
 ```json
 {
-  "status": "ok",
-  "timestamp": 1234567890,
-  "version": "0.1.0",
-  "connections": {
-    "daemons": 5,
-    "clients": 12,
-    "pairingCodes": 2
+  "type": "register",
+  "from": "daemon-1",
+  "payload": "{\"deviceType\":\"daemon\",\"publicKey\":\"...\",\"accessToken\":\"opentermux-...\"}",
+  "timestamp": 1730000000000
+}
+```
+
+- `daemon` 注册时可带 `accessToken`
+- `client` 注册时不需要 `accessToken`
+
+### `token_auth`
+
+客户端使用 Access Token 请求认证。
+
+```json
+{
+  "type": "token_auth",
+  "from": "client-1",
+  "payload": "{\"deviceType\":\"client\",\"publicKey\":\"...\",\"accessToken\":\"opentermux-...\"}",
+  "timestamp": 1730000000000
+}
+```
+
+### `token_ack`
+
+认证结果回执。
+
+成功（发给 client）：
+
+```json
+{
+  "type": "token_ack",
+  "from": "relay",
+  "to": "client-1",
+  "payload": "{\"success\":true,\"daemonId\":\"daemon-1\",\"publicKey\":\"...\"}",
+  "timestamp": 1730000000000
+}
+```
+
+成功（通知 daemon）：
+
+```json
+{
+  "type": "token_ack",
+  "from": "relay",
+  "to": "daemon-1",
+  "payload": "{\"success\":true,\"clientId\":\"client-1\",\"publicKey\":\"...\"}",
+  "timestamp": 1730000000000
+}
+```
+
+失败（发给 client）：
+
+```json
+{
+  "type": "token_ack",
+  "from": "relay",
+  "to": "client-1",
+  "payload": "{\"success\":false,\"error\":\"Access Token 无效或 Daemon 未连接\"}",
+  "timestamp": 1730000000000
+}
+```
+
+### `message`
+
+应用层加密消息传输载体。`payload` 为加密串。
+
+### `heartbeat`
+
+心跳保活消息。
+
+### `error`
+
+传输层错误消息。
+
+```json
+{
+  "type": "error",
+  "from": "relay",
+  "payload": "{\"code\":\"ROUTE_FAILED\",\"message\":\"接收者设备未连接\"}",
+  "timestamp": 1730000000000
+}
+```
+
+## 应用层协议（E2E 加密）
+
+### 通用结构
+
+```ts
+interface AppMessage {
+  action:
+    | 'session:create'
+    | 'session:created'
+    | 'session:list'
+    | 'session:list_response'
+    | 'session:close'
+    | 'session:closed'
+    | 'session:input'
+    | 'session:output'
+    | 'session:resize'
+    | 'error';
+  messageId?: string;
+}
+```
+
+### 会话模型
+
+```ts
+type SessionType = 'terminal';
+
+interface SessionOptions {
+  cwd?: string;
+  shell?: string;
+  cols?: number;
+  rows?: number;
+}
+```
+
+### `session:create`
+
+```json
+{
+  "action": "session:create",
+  "messageId": "1730000000-abc123",
+  "sessionType": "terminal",
+  "options": {
+    "cwd": "/home/user/project"
   }
 }
 ```
 
-### 服务器信息
+### `session:created`
 
-```
-GET /
-```
-
-**响应：**
 ```json
 {
-  "name": "MyCC Relay Server",
-  "version": "0.1.0",
+  "action": "session:created",
+  "messageId": "1730000000-def456",
+  "session": {
+    "id": "session-1",
+    "type": "terminal",
+    "status": "running",
+    "createdAt": 1730000000000,
+    "title": "bash: /home/user/project"
+  }
+}
+```
+
+### `session:list` / `session:list_response`
+
+`session:list_response` 会返回 `sessions`，并可附带 `outputHistory` 供重连回放。
+
+### `session:input`
+
+```json
+{
+  "action": "session:input",
+  "messageId": "1730000000-ghi789",
+  "sessionId": "session-1",
+  "data": "ls -la\n"
+}
+```
+
+### `session:output`
+
+```json
+{
+  "action": "session:output",
+  "messageId": "1730000000-jkl012",
+  "sessionId": "session-1",
+  "data": "total 8\r\n"
+}
+```
+
+### `session:resize`
+
+```json
+{
+  "action": "session:resize",
+  "messageId": "1730000000-mno345",
+  "sessionId": "session-1",
+  "cols": 120,
+  "rows": 32
+}
+```
+
+### `session:close` / `session:closed`
+
+用于主动关闭和关闭通知。
+
+### `error`
+
+应用层错误。
+
+```json
+{
+  "action": "error",
+  "messageId": "1730000000-pqr678",
+  "code": "SESSION_CREATE_FAILED",
+  "message": "工作目录不存在"
+}
+```
+
+## Relay HTTP 接口
+
+### `GET /health`
+
+```json
+{
+  "status": "ok",
+  "timestamp": 1730000000000,
+  "version": "1.0.0",
+  "connections": {
+    "daemons": 1,
+    "clients": 2,
+    "accessTokens": 1
+  }
+}
+```
+
+### `GET /`
+
+```json
+{
+  "name": "OpenTermux Relay Server",
+  "version": "1.0.0",
   "endpoints": {
     "/health": "GET - 健康检查",
     "/ws": "WebSocket - 设备连接端点"
@@ -46,490 +270,21 @@ GET /
 }
 ```
 
-## WebSocket API
+### `GET /ws`
 
-### 连接端点
+非升级请求返回 `426`。
 
-```
-WebSocket: ws://localhost:3000/ws
-```
+## 错误码（常见）
 
-### 传输层消息格式
+- `INVALID_JSON`
+- `INVALID_MESSAGE`
+- `INVALID_PAYLOAD`
+- `INVALID_DEVICE_TYPE`
+- `ROUTE_FAILED`
+- `PEER_DISCONNECTED`
 
-所有 WebSocket 消息都使用 JSON 格式：
+## 安全说明
 
-```typescript
-interface TransportMessage {
-  /** 消息类型 */
-  type: TransportMessageType;
-  /** 发送者设备 ID */
-  from: string;
-  /** 接收者设备 ID（可选） */
-  to?: string;
-  /** 消息载荷 */
-  payload: string;
-  /** 时间戳 */
-  timestamp: number;
-}
-
-type TransportMessageType =
-  | 'register'    // 设备注册
-  | 'pair'        // 配对请求
-  | 'pair_ack'    // 配对确认
-  | 'message'     // 加密消息
-  | 'heartbeat'   // 心跳
-  | 'error';      // 错误
-```
-
----
-
-## 传输层协议
-
-### register - 设备注册
-
-**发送方：** Daemon / Client
-**接收方：** Relay
-
-**请求：**
-```json
-{
-  "type": "register",
-  "from": "device-id",
-  "payload": "{\"deviceType\":\"daemon\",\"publicKey\":\"base64-key\"}",
-  "timestamp": 1234567890
-}
-```
-
-**Payload 结构：**
-```typescript
-{
-  deviceType: 'daemon' | 'client';
-  publicKey: string;  // Base64 编码的公钥
-}
-```
-
----
-
-### pair - 配对请求
-
-**发送方：** Client
-**接收方：** Relay → Daemon
-
-**请求：**
-```json
-{
-  "type": "pair",
-  "from": "client-id",
-  "payload": "{\"code\":\"123456\",\"publicKey\":\"base64-key\"}",
-  "timestamp": 1234567890
-}
-```
-
-**Payload 结构：**
-```typescript
-{
-  code: string;       // 6 位配对码
-  publicKey: string;  // 客户端公钥
-  name?: string;      // 可选的客户端名称
-}
-```
-
----
-
-### pair_ack - 配对确认
-
-**发送方：** Daemon
-**接收方：** Client
-
-**成功响应：**
-```json
-{
-  "type": "pair_ack",
-  "from": "daemon-id",
-  "to": "client-id",
-  "payload": "{\"success\":true,\"daemonId\":\"daemon-id\",\"publicKey\":\"base64-key\"}",
-  "timestamp": 1234567890
-}
-```
-
-**失败响应：**
-```json
-{
-  "type": "pair_ack",
-  "from": "daemon-id",
-  "to": "client-id",
-  "payload": "{\"success\":false,\"error\":\"配对码无效或已过期\"}",
-  "timestamp": 1234567890
-}
-```
-
----
-
-### message - 加密消息
-
-**发送方：** Daemon / Client
-**接收方：** Client / Daemon
-
-```json
-{
-  "type": "message",
-  "from": "sender-id",
-  "to": "receiver-id",
-  "payload": "base64-encrypted-data",
-  "timestamp": 1234567890
-}
-```
-
-payload 是使用 AES-256-GCM 加密的应用层消息。
-
----
-
-### heartbeat - 心跳
-
-**发送方：** Daemon / Client
-**接收方：** Relay
-
-```json
-{
-  "type": "heartbeat",
-  "from": "device-id",
-  "payload": "",
-  "timestamp": 1234567890
-}
-```
-
----
-
-### error - 错误
-
-**发送方：** Relay
-**接收方：** Daemon / Client
-
-```json
-{
-  "type": "error",
-  "from": "relay",
-  "to": "device-id",
-  "payload": "{\"code\":\"PEER_DISCONNECTED\",\"message\":\"配对设备已断开连接\"}",
-  "timestamp": 1234567890
-}
-```
-
----
-
-## 应用层协议
-
-应用层消息使用 AES-256-GCM 加密后放入传输层的 payload 字段。
-
-### 基础结构
-
-```typescript
-interface AppMessage {
-  action: AppMessageAction;
-  messageId?: string;
-}
-
-type AppMessageAction =
-  | 'session:create'
-  | 'session:created'
-  | 'session:list'
-  | 'session:list_response'
-  | 'session:close'
-  | 'session:closed'
-  | 'session:input'
-  | 'session:output'
-  | 'session:resize'
-  | 'permission:request'
-  | 'permission:respond'
-  | 'error';
-```
-
----
-
-## 会话管理消息
-
-### session:create - 创建会话
-
-**发送方：** Client
-**接收方：** Daemon
-
-```typescript
-{
-  action: 'session:create',
-  messageId: 'msg-123',
-  sessionType: 'claude' | 'terminal',
-  options?: {
-    // Claude 会话选项
-    cwd?: string;
-    model?: string;
-    initialPrompt?: string;
-    // 终端会话选项
-    shell?: string;
-    cols?: number;
-    rows?: number;
-  }
-}
-```
-
----
-
-### session:created - 会话已创建
-
-**发送方：** Daemon
-**接收方：** Client
-
-```typescript
-{
-  action: 'session:created',
-  messageId: 'msg-124',
-  session: {
-    id: 'session-uuid',
-    type: 'claude' | 'terminal',
-    status: 'running',
-    createdAt: 1234567890,
-    title: 'Claude: project-name'
-  }
-}
-```
-
----
-
-### session:list - 列出会话
-
-**发送方：** Client
-**接收方：** Daemon
-
-```typescript
-{
-  action: 'session:list',
-  messageId: 'msg-125'
-}
-```
-
----
-
-### session:list_response - 会话列表响应
-
-**发送方：** Daemon
-**接收方：** Client
-
-```typescript
-{
-  action: 'session:list_response',
-  messageId: 'msg-126',
-  sessions: [
-    {
-      id: 'session-1',
-      type: 'claude',
-      status: 'running',
-      createdAt: 1234567890,
-      title: 'Claude: project-a'
-    },
-    {
-      id: 'session-2',
-      type: 'terminal',
-      status: 'running',
-      createdAt: 1234567891,
-      title: 'bash'
-    }
-  ]
-}
-```
-
----
-
-### session:close - 关闭会话
-
-**发送方：** Client
-**接收方：** Daemon
-
-```typescript
-{
-  action: 'session:close',
-  messageId: 'msg-127',
-  sessionId: 'session-uuid'
-}
-```
-
----
-
-### session:closed - 会话已关闭
-
-**发送方：** Daemon
-**接收方：** Client
-
-```typescript
-{
-  action: 'session:closed',
-  messageId: 'msg-128',
-  sessionId: 'session-uuid',
-  reason?: 'Client requested' | 'Session exited'
-}
-```
-
----
-
-## 会话交互消息
-
-### session:input - 会话输入
-
-**发送方：** Client
-**接收方：** Daemon
-
-```typescript
-{
-  action: 'session:input',
-  messageId: 'msg-129',
-  sessionId: 'session-uuid',
-  data: '用户输入的文本\n'
-}
-```
-
----
-
-### session:output - 会话输出
-
-**发送方：** Daemon
-**接收方：** Client
-
-```typescript
-{
-  action: 'session:output',
-  messageId: 'msg-130',
-  sessionId: 'session-uuid',
-  data: 'Claude 的回复或终端输出（可能包含 ANSI 转义序列）'
-}
-```
-
----
-
-### session:resize - 终端尺寸调整
-
-**发送方：** Client
-**接收方：** Daemon
-
-```typescript
-{
-  action: 'session:resize',
-  messageId: 'msg-131',
-  sessionId: 'session-uuid',
-  cols: 120,
-  rows: 40
-}
-```
-
----
-
-## 权限审批消息
-
-### permission:request - 权限请求
-
-**发送方：** Daemon
-**接收方：** Client
-
-```typescript
-{
-  action: 'permission:request',
-  messageId: 'msg-132',
-  request: {
-    id: 'request-uuid',
-    sessionId: 'session-uuid',
-    tool: 'bash',
-    description: '执行命令: rm -rf /tmp/cache',
-    status: 'pending',
-    requestedAt: 1234567890
-  }
-}
-```
-
----
-
-### permission:respond - 权限响应
-
-**发送方：** Client
-**接收方：** Daemon
-
-```typescript
-{
-  action: 'permission:respond',
-  messageId: 'msg-133',
-  sessionId: 'session-uuid',
-  requestId: 'request-uuid',
-  approved: true | false
-}
-```
-
----
-
-## 错误消息
-
-### error - 应用层错误
-
-```typescript
-{
-  action: 'error',
-  messageId: 'msg-134',
-  code: 'SESSION_CREATE_FAILED' | 'SESSION_NOT_FOUND' | ...,
-  message: '创建会话失败: 无法启动 Claude 进程',
-  relatedMessageId?: 'msg-123'  // 关联的请求消息 ID
-}
-```
-
----
-
-## 错误码
-
-| 错误码 | 描述 |
-|--------|------|
-| `INVALID_MESSAGE` | 无效的消息格式 |
-| `DEVICE_NOT_REGISTERED` | 设备未注册 |
-| `DEVICE_NOT_PAIRED` | 设备未配对 |
-| `PAIRING_CODE_INVALID` | 配对码无效 |
-| `PAIRING_CODE_EXPIRED` | 配对码已过期 |
-| `SESSION_CREATE_FAILED` | 创建会话失败 |
-| `SESSION_NOT_FOUND` | 会话不存在 |
-| `PERMISSION_DENIED` | 权限被拒绝 |
-| `PEER_DISCONNECTED` | 配对设备已断开 |
-| `ENCRYPTION_ERROR` | 加密/解密失败 |
-
----
-
-## 加密细节
-
-### 密钥交换
-
-使用 ECDH P-256 曲线进行密钥交换：
-
-1. 各方生成 ECDH 密钥对
-2. 配对时交换公钥
-3. 使用 ECDH 派生共享密钥
-4. 派生 AES-256 密钥
-
-### 消息加密
-
-使用 AES-256-GCM：
-
-```
-加密数据格式: IV(12字节) + 密文 + AuthTag(16字节)
-```
-
-编码为 Base64 后作为 payload 发送。
-
-### 密钥派生
-
-```typescript
-// 从 ECDH 共享密钥派生 AES 密钥
-const aesKey = await crypto.subtle.deriveKey(
-  {
-    name: 'ECDH',
-    public: remotePublicKey
-  },
-  localPrivateKey,
-  {
-    name: 'AES-GCM',
-    length: 256
-  },
-  false,
-  ['encrypt', 'decrypt']
-);
-```
+- Access Token 格式：`opentermux-<32hex>`
+- 客户端与 daemon 认证后使用 ECDH 派生共享密钥
+- 应用层数据以 AES-GCM 加密后通过 Relay 转发

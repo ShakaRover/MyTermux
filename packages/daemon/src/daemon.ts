@@ -13,18 +13,16 @@ import type {
   SessionCloseMessage,
   SessionInputMessage,
   SessionResizeMessage,
-  PermissionRespondMessage,
-  PermissionRequest,
-} from '@mycc/shared';
+} from '@opentermux/shared';
 import {
   createTransportMessage,
   generateMessageId,
   encryptJson,
   decryptJson,
-} from '@mycc/shared';
+} from '@opentermux/shared';
 import { WsClient } from './ws-client.js';
 import { SessionManager } from './session-manager.js';
-import { PairingManager } from './pairing.js';
+import { AuthManager } from './auth-manager.js';
 
 // ============================================================================
 // 自定义错误类型
@@ -87,7 +85,7 @@ export class Daemon extends EventEmitter {
   /** 会话管理器 */
   private readonly sessionManager: SessionManager;
   /** 认证管理器 */
-  private readonly pairingManager: PairingManager;
+  private readonly authManager: AuthManager;
   /** 运行状态 */
   private _isRunning = false;
   /** 当前在线的客户端 ID 集合（仅收到 token_ack 成功且未断线的） */
@@ -97,7 +95,7 @@ export class Daemon extends EventEmitter {
     super();
     this.options = options;
     this.sessionManager = new SessionManager();
-    this.pairingManager = new PairingManager();
+    this.authManager = new AuthManager();
   }
 
   // --------------------------------------------------------------------------
@@ -113,7 +111,7 @@ export class Daemon extends EventEmitter {
     }
 
     // 初始化认证管理器
-    await this.pairingManager.initialize();
+    await this.authManager.initialize();
 
     // 创建 WebSocket 客户端
     // 确保 URL 包含 /ws 路径
@@ -124,15 +122,15 @@ export class Daemon extends EventEmitter {
     this.wsClient = new WsClient({
       url: wsUrl,
       deviceType: 'daemon',
-      deviceId: this.pairingManager.deviceId,
-      publicKey: this.pairingManager.publicKey,
-      accessToken: this.pairingManager.accessToken,
+      deviceId: this.authManager.deviceId,
+      publicKey: this.authManager.publicKey,
+      accessToken: this.authManager.accessToken,
     });
 
     // 设置事件监听
     this.setupWsClientListeners();
     this.setupSessionManagerListeners();
-    this.setupPairingManagerListeners();
+    this.setupAuthManagerListeners();
 
     // 连接到中继服务器
     await this.wsClient.connect();
@@ -170,7 +168,7 @@ export class Daemon extends EventEmitter {
    * @returns Access Token
    */
   getAccessToken(): string {
-    return this.pairingManager.accessToken;
+    return this.authManager.accessToken;
   }
 
   /**
@@ -178,7 +176,7 @@ export class Daemon extends EventEmitter {
    * @returns 新的 Access Token
    */
   async regenerateToken(): Promise<string> {
-    return this.pairingManager.regenerateToken();
+    return this.authManager.regenerateToken();
   }
 
   /**
@@ -195,9 +193,9 @@ export class Daemon extends EventEmitter {
     return {
       isRunning: this._isRunning,
       isConnected: this.wsClient?.isConnected ?? false,
-      deviceId: this.pairingManager.deviceId,
+      deviceId: this.authManager.deviceId,
       sessionCount: this.sessionManager.sessionCount,
-      authenticatedClientsCount: this.pairingManager.getPairedClients().length,
+      authenticatedClientsCount: this.authManager.getAuthenticatedClients().length,
       onlineClientsCount: this.onlineClients.size,
     };
   }
@@ -267,12 +265,6 @@ export class Daemon extends EventEmitter {
       });
     });
 
-    this.sessionManager.on('permissionRequest', (request) => {
-      this.broadcastPermissionRequest(request).catch((error: unknown) => {
-        this.emit('error', this.toError(error));
-      });
-    });
-
     this.sessionManager.on('error', (_sessionId: string, error: Error) => {
       this.emit('error', error);
     });
@@ -281,12 +273,12 @@ export class Daemon extends EventEmitter {
   /**
    * 设置认证管理器监听器
    */
-  private setupPairingManagerListeners(): void {
-    this.pairingManager.on('clientAuthenticated', (client) => {
+  private setupAuthManagerListeners(): void {
+    this.authManager.on('clientAuthenticated', (client) => {
       console.log(`客户端认证成功: ${client.clientId}`);
     });
 
-    this.pairingManager.on('tokenGenerated', (token) => {
+    this.authManager.on('tokenGenerated', (token) => {
       this.emit('accessToken', token);
     });
   }
@@ -345,7 +337,7 @@ export class Daemon extends EventEmitter {
         return;
       }
 
-      if (this.pairingManager.isPaired(payload.clientId)) {
+      if (this.authManager.isAuthenticated(payload.clientId)) {
         // I2: 已认证的客户端重连，更新公钥
         // 安全说明：此消息由中继服务器在验证 Access Token 后转发。
         // 公钥更新的安全性依赖于以下信任链：
@@ -354,14 +346,14 @@ export class Daemon extends EventEmitter {
         // 3. 中继服务器本身是可信的（与首次认证的信任假设一致）
         // 注意：如果中继服务器被攻陷，攻击者可伪造公钥实施 MITM
         console.log(`客户端重连，公钥更新: ${payload.clientId}`);
-        await this.pairingManager.updateClientPublicKey(
+        await this.authManager.updateClientPublicKey(
           payload.clientId,
           payload.publicKey
         );
         console.log(`客户端重连成功: ${payload.clientId}`);
       } else {
         // 新客户端通过 Token 认证
-        await this.pairingManager.completePairing(
+        await this.authManager.completeAuthentication(
           payload.clientId,
           payload.publicKey
         );
@@ -380,14 +372,14 @@ export class Daemon extends EventEmitter {
    */
   private async handleEncryptedMessage(message: TransportMessage): Promise<void> {
     // 检查客户端是否已认证
-    if (!this.pairingManager.isPaired(message.from)) {
+    if (!this.authManager.isAuthenticated(message.from)) {
       console.warn(`收到未认证客户端的消息: ${message.from}`);
       return;
     }
 
     try {
       // 获取共享密钥
-      const sharedKey = await this.pairingManager.getSharedKey(message.from);
+      const sharedKey = await this.authManager.getSharedKey(message.from);
       if (!sharedKey) {
         throw new Error('无法获取共享密钥');
       }
@@ -424,9 +416,6 @@ export class Daemon extends EventEmitter {
         break;
       case 'session:resize':
         this.handleSessionResize(message as SessionResizeMessage);
-        break;
-      case 'permission:respond':
-        this.handlePermissionRespond(message as PermissionRespondMessage);
         break;
       default:
         console.warn(`未知应用层消息动作: ${message.action}`);
@@ -522,20 +511,6 @@ export class Daemon extends EventEmitter {
   }
 
   /**
-   * 处理权限响应
-   */
-  private handlePermissionRespond(message: PermissionRespondMessage): void {
-    try {
-      this.sessionManager.respondToPermission(
-        message.sessionId,
-        message.approved
-      );
-    } catch (error) {
-      this.emit('error', this.toError(error));
-    }
-  }
-
-  /**
    * 处理错误消息
    */
   private handleErrorMessage(message: TransportMessage): void {
@@ -593,7 +568,7 @@ export class Daemon extends EventEmitter {
     }
 
     try {
-      const sharedKey = await this.pairingManager.getSharedKey(clientId);
+      const sharedKey = await this.authManager.getSharedKey(clientId);
       if (!sharedKey) {
         throw new Error('无法获取共享密钥');
       }
@@ -602,7 +577,7 @@ export class Daemon extends EventEmitter {
 
       const transportMessage = createTransportMessage(
         'message',
-        this.pairingManager.deviceId,
+        this.authManager.deviceId,
         encryptedPayload,
         clientId
       );
@@ -654,21 +629,6 @@ export class Daemon extends EventEmitter {
       messageId: generateMessageId(),
       sessionId,
       ...(reason !== undefined && { reason }),
-    };
-
-    await this.broadcastToAllClients(message);
-  }
-
-  /**
-   * 广播权限请求
-   */
-  private async broadcastPermissionRequest(
-    request: PermissionRequest
-  ): Promise<void> {
-    const message = {
-      action: 'permission:request' as const,
-      messageId: generateMessageId(),
-      request,
     };
 
     await this.broadcastToAllClients(message);

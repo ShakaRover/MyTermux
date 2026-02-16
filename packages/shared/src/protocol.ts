@@ -10,7 +10,6 @@ import type {
   SessionType,
   SessionInfo,
   SessionOptions,
-  PermissionRequest,
 } from './types.js';
 
 // ============================================================================
@@ -87,9 +86,6 @@ export type AppMessageAction =
   | 'session:input'
   | 'session:output'
   | 'session:resize'
-  // 权限审批
-  | 'permission:request'
-  | 'permission:respond'
   // 错误
   | 'error';
 
@@ -183,28 +179,6 @@ export interface SessionResizeMessage extends AppMessage {
 }
 
 // ----------------------------------------------------------------------------
-// 权限审批消息
-// ----------------------------------------------------------------------------
-
-/** 权限请求消息（daemon → client） */
-export interface PermissionRequestMessage extends AppMessage {
-  action: 'permission:request';
-  /** 权限请求详情 */
-  request: PermissionRequest;
-}
-
-/** 权限响应消息（client → daemon） */
-export interface PermissionRespondMessage extends AppMessage {
-  action: 'permission:respond';
-  /** 会话 ID */
-  sessionId: string;
-  /** 请求 ID */
-  requestId: string;
-  /** 是否批准 */
-  approved: boolean;
-}
-
-// ----------------------------------------------------------------------------
 // 错误消息
 // ----------------------------------------------------------------------------
 
@@ -232,7 +206,7 @@ const VALID_TRANSPORT_TYPES = new Set<string>([
 const VALID_APP_ACTIONS = new Set<string>([
   'session:create', 'session:created', 'session:list', 'session:list_response',
   'session:close', 'session:closed', 'session:input', 'session:output',
-  'session:resize', 'permission:request', 'permission:respond', 'error'
+  'session:resize', 'error'
 ]);
 
 /** 检查是否为传输层消息 */

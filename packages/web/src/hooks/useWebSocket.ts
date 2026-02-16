@@ -11,7 +11,7 @@ import {
   generateMessageId,
   isTransportMessage,
   type AppMessage,
-} from '@mycc/shared';
+} from '@opentermux/shared';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useEncryption } from './useEncryption';
 
@@ -36,7 +36,7 @@ export interface UseWebSocketOptions {
   /** 连接断开时的回调 */
   onDisconnected?: () => void;
   /** 认证成功时的回调 */
-  onPaired?: (daemonId: string) => void;
+  onAuthenticated?: (daemonId: string) => void;
   /** 发生错误时的回调 */
   onError?: (error: string) => void;
   /** 重连中回调 */
@@ -57,10 +57,10 @@ export interface UseWebSocketReturn {
   send: (message: AppMessage) => Promise<void>;
   /** 是否正在连接 */
   isConnecting: boolean;
-  /** 是否有保存的配对令牌 */
-  hasSavedPairing: boolean;
-  /** 清除保存的配对信息 */
-  clearSavedPairing: () => void;
+  /** 是否有保存的认证凭证 */
+  hasSavedAuth: boolean;
+  /** 清除保存的认证信息 */
+  clearSavedAuth: () => void;
 }
 
 /**
@@ -70,23 +70,23 @@ export interface UseWebSocketReturn {
  * 支持令牌认证和自动重连
  */
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
-  const { onAppMessage, onConnected, onDisconnected, onPaired, onError, onReconnecting } = options;
+  const { onAppMessage, onConnected, onDisconnected, onAuthenticated, onError, onReconnecting } = options;
 
   const {
     state,
     deviceId,
     daemonId,
     ws,
-    _hasSavedPairing,
-    restoreFromStorage,
-    clearStorage,
+    _hasSavedAuth,
+    restoreAuthFromStorage,
+    clearAuthStorage,
   } = useConnectionStore();
 
   const { initKeyPair, deriveSharedKey, encrypt, decrypt } = useEncryption();
 
   // 使用 ref 存储回调，避免闭包问题
-  const callbacksRef = useRef({ onAppMessage, onConnected, onDisconnected, onPaired, onError, onReconnecting });
-  callbacksRef.current = { onAppMessage, onConnected, onDisconnected, onPaired, onError, onReconnecting };
+  const callbacksRef = useRef({ onAppMessage, onConnected, onDisconnected, onAuthenticated, onError, onReconnecting });
+  callbacksRef.current = { onAppMessage, onConnected, onDisconnected, onAuthenticated, onError, onReconnecting };
 
   // 心跳定时器
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -169,7 +169,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
             try {
               payload = JSON.parse(data.payload) as typeof payload;
             } catch {
-              // C3: 解析失败时将状态从 pairing 恢复为 disconnected
+              // C3: 解析失败时将状态从 authenticating 恢复为 disconnected
               store.setState('disconnected');
               store.setError('认证响应格式错误');
               callbacksRef.current.onError?.('认证响应格式错误');
@@ -186,10 +186,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
                   store.setDaemonId(payload.daemonId);
                 }
 
-                store.setState('paired');
+                store.setState('authenticated');
 
                 // 保存认证信息到本地存储
-                await store.savePairingToStorage();
+                await store.saveAuthToStorage();
 
                 // 重置重连计数
                 reconnectRef.current.attempt = 0;
@@ -198,7 +198,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
                 // S3: 简化 daemonId 获取逻辑
                 const currentDaemonId = payload.daemonId ?? useConnectionStore.getState().daemonId;
                 if (currentDaemonId) {
-                  callbacksRef.current.onPaired?.(currentDaemonId);
+                  callbacksRef.current.onAuthenticated?.(currentDaemonId);
                 }
               } catch (err) {
                 store.setState('connected');
@@ -208,7 +208,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
               }
             } else {
               // C2: 认证失败后 relay 会关闭连接(4001)，直接设为 disconnected 避免状态跳变
-              store.clearStorage();
+              store.clearAuthStorage();
               store.setState('disconnected');
               const errorMsg = payload.error || '认证失败，请检查 Access Token';
               store.setError(errorMsg);
@@ -397,7 +397,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         const tokenMessage = createTransportMessage('token_auth', tokenDeviceId, tokenPayload);
         socket.send(JSON.stringify(tokenMessage));
 
-        useConnectionStore.getState().setState('pairing'); // 等待 token_ack
+        useConnectionStore.getState().setState('authenticating'); // 等待 token_ack
         startHeartbeat(socket, tokenDeviceId);
         callbacksRef.current.onConnected?.();
       };
@@ -414,11 +414,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   /**
    * 使用保存的令牌重连
    *
-   * 返回 true 表示已发起重连（不代表认证成功，认证结果通过 onPaired 回调通知）
+   * 返回 true 表示已发起重连（不代表认证成功，认证结果通过 onAuthenticated 回调通知）
    */
   const reconnectWithToken = useCallback(async (): Promise<boolean> => {
     // 尝试从本地存储恢复
-    const restored = await restoreFromStorage();
+    const restored = await restoreAuthFromStorage();
     if (!restored) {
       return false;
     }
@@ -443,7 +443,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
       callbacksRef.current.onError?.(errorMsg);
       return false;
     }
-  }, [doConnectWithToken, restoreFromStorage]);
+  }, [doConnectWithToken, restoreAuthFromStorage]);
 
   /**
    * 连接到中继服务器（等待用户输入 Access Token）
@@ -525,7 +525,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
         throw new Error('密钥对未初始化');
       }
 
-      store.setState('pairing');
+      store.setState('authenticating');
       reconnectRef.current.usingToken = true; // 认证成功后将使用令牌重连
 
       // 保存 accessToken 到 store，供重连时使用
@@ -578,7 +578,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
     authenticate,
     send,
     isConnecting: state === 'connecting',
-    hasSavedPairing: _hasSavedPairing,
-    clearSavedPairing: clearStorage,
+    hasSavedAuth: _hasSavedAuth,
+    clearSavedAuth: clearAuthStorage,
   };
 }

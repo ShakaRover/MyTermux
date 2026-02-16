@@ -1,10 +1,10 @@
 {
-  "name": "@mycc/daemon",
-  "version": "0.1.0",
+  "name": "@opentermux/daemon",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "bin": {
-    "mycc": "./dist/index.js"
+    "opentermux": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -20,7 +20,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@mycc/shared": "workspace:*",
+    "@opentermux/shared": "workspace:*",
     "commander": "^13.1.0",
     "node-pty": "^1.0.0",
     "ws": "^8.18.0"

@@ -12,8 +12,7 @@ import {
   type SessionListResponseMessage,
   type SessionClosedMessage,
   type SessionOutputMessage,
-  type PermissionRequestMessage,
-} from '@mycc/shared';
+} from '@opentermux/shared';
 import { useSessionsStore } from '../stores/sessionsStore';
 import { useConnectionStore } from '../stores/connectionStore';
 
@@ -59,14 +58,8 @@ export function initializeGlobalMessageHandler(): void {
 
       case 'session:output': {
         const msg = message as SessionOutputMessage;
-        // Claude Code 和终端会话都是 TUI 程序，统一使用终端缓冲区渲染
+        // 所有会话统一使用终端缓冲区渲染
         store.appendTerminalOutput(msg.sessionId, msg.data);
-        break;
-      }
-
-      case 'permission:request': {
-        const msg = message as PermissionRequestMessage;
-        store.addPermissionRequest(msg.request);
         break;
       }
 

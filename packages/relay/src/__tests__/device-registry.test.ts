@@ -71,7 +71,7 @@ describe('DeviceRegistry', () => {
 
     it('daemon 注册时携带 accessToken 应自动注册 Token', () => {
       const ws = createMockWs();
-      registry.registerDevice(ws, 'daemon-1', 'daemon', 'pk-1', 'mycc-test-token');
+      registry.registerDevice(ws, 'daemon-1', 'daemon', 'pk-1', 'opentermux-test-token');
 
       const stats = registry.getStats();
       expect(stats.accessTokens).toBe(1);
@@ -89,7 +89,7 @@ describe('DeviceRegistry', () => {
   describe('unregisterDevice', () => {
     it('注销 daemon 时应标记 Token 待清理', () => {
       const ws = createMockWs();
-      registry.registerDevice(ws, 'daemon-1', 'daemon', 'pk-1', 'mycc-test-token');
+      registry.registerDevice(ws, 'daemon-1', 'daemon', 'pk-1', 'opentermux-test-token');
       registry.unregisterDevice('daemon-1');
 
       // daemon 已注销
@@ -100,12 +100,12 @@ describe('DeviceRegistry', () => {
 
     it('daemon 重连时应清除 Token 待清理标记', () => {
       const ws1 = createMockWs();
-      registry.registerDevice(ws1, 'daemon-1', 'daemon', 'pk-1', 'mycc-test-token');
+      registry.registerDevice(ws1, 'daemon-1', 'daemon', 'pk-1', 'opentermux-test-token');
       registry.unregisterDevice('daemon-1');
 
       // 重连
       const ws2 = createMockWs();
-      registry.registerDevice(ws2, 'daemon-1', 'daemon', 'pk-1', 'mycc-test-token');
+      registry.registerDevice(ws2, 'daemon-1', 'daemon', 'pk-1', 'opentermux-test-token');
 
       // Token 应该仍然有效
       expect(registry.getStats().accessTokens).toBe(1);
@@ -129,16 +129,16 @@ describe('DeviceRegistry', () => {
   });
 
   describe('validateAccessToken', () => {
-    it('Token 有效时应建立配对关系并返回 daemonId', () => {
+    it('Token 有效时应建立认证关系并返回 daemonId', () => {
       const daemonWs = createMockWs();
       const clientWs = createMockWs();
 
-      registry.registerDevice(daemonWs, 'daemon-1', 'daemon', 'pk-d1', 'mycc-valid-token');
+      registry.registerDevice(daemonWs, 'daemon-1', 'daemon', 'pk-d1', 'opentermux-valid-token');
       registry.registerDevice(clientWs, 'client-1', 'client', 'pk-c1');
 
-      const result = registry.validateAccessToken('mycc-valid-token', 'client-1');
+      const result = registry.validateAccessToken('opentermux-valid-token', 'client-1');
       expect(result).toBe('daemon-1');
-      expect(registry.arePaired('daemon-1', 'client-1')).toBe(true);
+      expect(registry.arePeersAuthenticated('daemon-1', 'client-1')).toBe(true);
     });
 
     it('Token 不存在时应返回 null', () => {
@@ -151,9 +151,9 @@ describe('DeviceRegistry', () => {
 
     it('client 未注册时应返回 null', () => {
       const daemonWs = createMockWs();
-      registry.registerDevice(daemonWs, 'daemon-1', 'daemon', 'pk-d1', 'mycc-token');
+      registry.registerDevice(daemonWs, 'daemon-1', 'daemon', 'pk-d1', 'opentermux-token');
 
-      const result = registry.validateAccessToken('mycc-token', 'unregistered-client');
+      const result = registry.validateAccessToken('opentermux-token', 'unregistered-client');
       expect(result).toBeNull();
     });
 
@@ -161,13 +161,13 @@ describe('DeviceRegistry', () => {
       const daemonWs = createMockWs();
       const clientWs = createMockWs();
 
-      registry.registerDevice(daemonWs, 'daemon-1', 'daemon', 'pk-d1', 'mycc-token');
+      registry.registerDevice(daemonWs, 'daemon-1', 'daemon', 'pk-d1', 'opentermux-token');
       registry.registerDevice(clientWs, 'client-1', 'client', 'pk-c1');
 
       // daemon 离线
       registry.unregisterDevice('daemon-1');
 
-      const result = registry.validateAccessToken('mycc-token', 'client-1');
+      const result = registry.validateAccessToken('opentermux-token', 'client-1');
       expect(result).toBeNull();
     });
 
@@ -175,10 +175,10 @@ describe('DeviceRegistry', () => {
       const daemonWs = createMockWs();
       const daemon2Ws = createMockWs();
 
-      registry.registerDevice(daemonWs, 'daemon-1', 'daemon', 'pk-d1', 'mycc-token');
+      registry.registerDevice(daemonWs, 'daemon-1', 'daemon', 'pk-d1', 'opentermux-token');
       registry.registerDevice(daemon2Ws, 'daemon-2', 'daemon', 'pk-d2');
 
-      const result = registry.validateAccessToken('mycc-token', 'daemon-2');
+      const result = registry.validateAccessToken('opentermux-token', 'daemon-2');
       expect(result).toBeNull();
     });
 
@@ -187,16 +187,16 @@ describe('DeviceRegistry', () => {
       const client1Ws = createMockWs();
       const client2Ws = createMockWs();
 
-      registry.registerDevice(daemonWs, 'daemon-1', 'daemon', 'pk-d1', 'mycc-shared-token');
+      registry.registerDevice(daemonWs, 'daemon-1', 'daemon', 'pk-d1', 'opentermux-shared-token');
       registry.registerDevice(client1Ws, 'client-1', 'client', 'pk-c1');
       registry.registerDevice(client2Ws, 'client-2', 'client', 'pk-c2');
 
-      expect(registry.validateAccessToken('mycc-shared-token', 'client-1')).toBe('daemon-1');
-      expect(registry.validateAccessToken('mycc-shared-token', 'client-2')).toBe('daemon-1');
+      expect(registry.validateAccessToken('opentermux-shared-token', 'client-1')).toBe('daemon-1');
+      expect(registry.validateAccessToken('opentermux-shared-token', 'client-2')).toBe('daemon-1');
 
-      // daemon 应与两个 client 都配对
-      expect(registry.arePaired('daemon-1', 'client-1')).toBe(true);
-      expect(registry.arePaired('daemon-1', 'client-2')).toBe(true);
+      // daemon 应与两个 client 都建立认证关系
+      expect(registry.arePeersAuthenticated('daemon-1', 'client-1')).toBe(true);
+      expect(registry.arePeersAuthenticated('daemon-1', 'client-2')).toBe(true);
     });
   });
 

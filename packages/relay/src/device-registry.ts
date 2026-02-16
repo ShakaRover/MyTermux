@@ -8,7 +8,7 @@
  */
 
 import type { WebSocket } from 'ws';
-import type { DeviceType } from '@mycc/shared';
+import type { DeviceType } from '@opentermux/shared';
 
 /** 设备连接信息 */
 interface DeviceConnection {
@@ -20,8 +20,8 @@ interface DeviceConnection {
   connectedAt: number;
   /** 最后心跳时间 */
   lastHeartbeat: number;
-  /** 已配对的设备 ID 集合（daemon 可对应多个 client，client 仅对应一个 daemon） */
-  pairedDeviceIds: Set<string>;
+  /** 已认证对端设备 ID 集合（daemon 可对应多个 client，client 仅对应一个 daemon） */
+  authenticatedPeerIds: Set<string>;
   /** 设备公钥 */
   publicKey?: string;
 }
@@ -83,7 +83,7 @@ export class DeviceRegistry {
       console.log(`[DeviceRegistry] 设备重复注册，断开旧连接: ${deviceId}`);
       existing.ws.close(1000, '新连接替换旧连接');
     } else if (existing) {
-      // 同一 ws 重复注册（如 token_auth 流程），仅更新元数据，保留配对关系
+      // 同一 ws 重复注册（如 token_auth 流程），仅更新元数据，保留认证关系
       console.log(`[DeviceRegistry] 同一 ws 重复注册，更新设备信息: ${deviceId}`);
       existing.lastHeartbeat = Date.now();
       if (publicKey !== undefined) existing.publicKey = publicKey;
@@ -107,7 +107,7 @@ export class DeviceRegistry {
       deviceType,
       connectedAt: now,
       lastHeartbeat: now,
-      pairedDeviceIds: new Set(),
+      authenticatedPeerIds: new Set(),
       // S1: 保留条件展开以兼容 exactOptionalPropertyTypes（publicKey 为 undefined 时不赋值）
       ...(publicKey !== undefined && { publicKey }),
     };
@@ -145,7 +145,7 @@ export class DeviceRegistry {
    * 注销设备
    * @param deviceId 设备 ID
    *
-   * 注意：设备断开时不清除对方的配对关系，以支持断线重连。
+   * 注意：设备断开时不清除对方的认证关系，以支持断线重连。
    */
   unregisterDevice(deviceId: string): void {
     const device = this.devices.get(deviceId);
@@ -253,31 +253,31 @@ export class DeviceRegistry {
     }
 
     // 完成认证（Token 不销毁，可以被多个 client 使用）
-    daemon.pairedDeviceIds.add(clientId);
-    client.pairedDeviceIds.add(entry.daemonId);
+    daemon.authenticatedPeerIds.add(clientId);
+    client.authenticatedPeerIds.add(entry.daemonId);
 
     console.log(`[DeviceRegistry] Token 认证成功: ${clientId} <-> ${entry.daemonId}`);
     return entry.daemonId;
   }
 
   /**
-   * 获取设备的配对设备 ID 集合
+   * 获取设备的已认证对端 ID 集合
    * @param deviceId 设备 ID
-   * @returns 配对设备 ID 集合或 undefined
+   * @returns 已认证对端 ID 集合或 undefined
    */
-  getPairedDeviceIds(deviceId: string): Set<string> | undefined {
-    return this.devices.get(deviceId)?.pairedDeviceIds;
+  getAuthenticatedPeerIds(deviceId: string): Set<string> | undefined {
+    return this.devices.get(deviceId)?.authenticatedPeerIds;
   }
 
   /**
-   * 检查两个设备是否已配对
+   * 检查两个设备是否已建立认证关系
    * @param deviceId1 设备 1 ID
    * @param deviceId2 设备 2 ID
-   * @returns 是否已配对
+   * @returns 是否已认证
    */
-  arePaired(deviceId1: string, deviceId2: string): boolean {
+  arePeersAuthenticated(deviceId1: string, deviceId2: string): boolean {
     const device1 = this.devices.get(deviceId1);
-    return device1?.pairedDeviceIds.has(deviceId2) ?? false;
+    return device1?.authenticatedPeerIds.has(deviceId2) ?? false;
   }
 
   /**

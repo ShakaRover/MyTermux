@@ -6,39 +6,22 @@
 
 import { useSessionsStore, type SessionData } from '../stores/sessionsStore';
 
-/** 会话图标配置 */
-const sessionIcons = {
-  claude: (
-    <svg
-      className="w-5 h-5"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-      />
-    </svg>
-  ),
-  terminal: (
-    <svg
-      className="w-5 h-5"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-      />
-    </svg>
-  ),
-};
+/** 会话图标 */
+const sessionIcon = (
+  <svg
+    className="w-5 h-5"
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+    />
+  </svg>
+);
 
 /** 状态颜色配置 */
 const statusColors = {
@@ -84,13 +67,8 @@ function SessionListItem({
       onClick={onClick}
     >
       {/* 会话图标 */}
-      <div
-        className={`
-          flex-shrink-0 p-1.5 rounded-md
-          ${session.type === 'claude' ? 'bg-purple-900/50 text-purple-400' : 'bg-emerald-900/50 text-emerald-400'}
-        `}
-      >
-        {sessionIcons[session.type]}
+      <div className="flex-shrink-0 p-1.5 rounded-md bg-emerald-900/50 text-emerald-400">
+        {sessionIcon}
       </div>
 
       {/* 会话信息 */}
@@ -106,8 +84,8 @@ function SessionListItem({
           </span>
         </div>
         <div className="text-xs text-gray-500 truncate">
-          {session.type === 'claude' ? 'Claude 对话' : '终端'}
-          {' · '}
+          终端会话 ·
+          {' '}
           {new Date(session.createdAt).toLocaleTimeString('zh-CN', {
             hour: '2-digit',
             minute: '2-digit',
@@ -153,7 +131,7 @@ export function SessionList({ onCloseSession, className = '' }: SessionListProps
   if (isLoading) {
     return (
       <div className={`flex items-center justify-center py-8 ${className}`}>
-        <div className="animate-spin rounded-full h-6 w-6 border-2 border-gray-600 border-t-purple-500" />
+        <div className="animate-spin rounded-full h-6 w-6 border-2 border-gray-600 border-t-emerald-500" />
       </div>
     );
   }

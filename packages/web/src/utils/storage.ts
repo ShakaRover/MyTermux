@@ -1,20 +1,16 @@
 /**
  * 持久化存储工具
  *
- * 使用 localStorage 保存配对令牌和连接信息
- *
- * 术语说明：代码中的 "pairing"（配对）是历史遗留命名，
- * 实际流程已改为 Access Token 认证。"pairing token" 指保存在本地的认证凭证，
- * 包含 deviceId、daemonId、密钥对和 accessToken 等信息。
+ * 使用 localStorage 保存认证凭证和连接信息
  */
 
-import type { KeyPair } from '@mycc/shared';
+import type { KeyPair } from '@opentermux/shared';
 
 /** 存储键名 */
-const PAIRING_TOKEN_KEY = 'mycc:pairing_token';
+const AUTH_TOKEN_KEY = 'opentermux:auth_token';
 
-/** 配对令牌信息 */
-export interface PairingToken {
+/** 认证凭证信息 */
+export interface AuthToken {
   /** 本地设备 ID */
   deviceId: string;
   /** 已认证的 daemon ID */
@@ -24,7 +20,7 @@ export interface PairingToken {
   /** 私钥（JWK 格式） */
   privateKeyJwk: JsonWebKey;
   /** 认证时间戳 */
-  pairedAt: number;
+  authenticatedAt: number;
   /** 中继服务器地址 */
   relayUrl: string;
   /** Access Token（用于重连认证） */
@@ -32,39 +28,39 @@ export interface PairingToken {
 }
 
 /**
- * 保存配对令牌
+ * 保存认证凭证
  * @throws 当 localStorage 不可用或存储空间不足时抛出异常
  */
-export function savePairingToken(token: PairingToken): void {
-  localStorage.setItem(PAIRING_TOKEN_KEY, JSON.stringify(token));
+export function saveAuthToken(token: AuthToken): void {
+  localStorage.setItem(AUTH_TOKEN_KEY, JSON.stringify(token));
 }
 
 /**
- * 获取配对令牌
+ * 获取认证凭证
  */
-export function getPairingToken(): PairingToken | null {
+export function getAuthToken(): AuthToken | null {
   try {
-    const data = localStorage.getItem(PAIRING_TOKEN_KEY);
+    const data = localStorage.getItem(AUTH_TOKEN_KEY);
     if (!data) {
       return null;
     }
-    return JSON.parse(data) as PairingToken;
+    return JSON.parse(data) as AuthToken;
   } catch (error) {
-    console.error('获取配对令牌失败:', error);
+    console.error('获取认证凭证失败:', error);
     return null;
   }
 }
 
 /**
- * 清除配对令牌
+ * 清除认证凭证
  * @returns 清除是否成功（localStorage 不可用时返回 false）
  */
-export function clearPairingToken(): boolean {
+export function clearAuthToken(): boolean {
   try {
-    localStorage.removeItem(PAIRING_TOKEN_KEY);
+    localStorage.removeItem(AUTH_TOKEN_KEY);
     return true;
   } catch (error) {
-    console.error('清除配对令牌失败:', error);
+    console.error('清除认证凭证失败:', error);
     return false;
   }
 }
@@ -93,9 +89,9 @@ export async function exportPrivateKeyToJwk(privateKey: CryptoKey): Promise<Json
 }
 
 /**
- * 从配对令牌恢复密钥对
+ * 从认证凭证恢复密钥对
  */
-export async function restoreKeyPairFromToken(token: PairingToken): Promise<KeyPair> {
+export async function restoreKeyPairFromAuthToken(token: AuthToken): Promise<KeyPair> {
   const privateKey = await importPrivateKeyFromJwk(token.privateKeyJwk);
   return {
     publicKey: token.publicKey,

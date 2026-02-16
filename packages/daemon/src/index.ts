@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * @mycc/daemon CLI 入口
+ * @opentermux/daemon CLI 入口
  *
  * 命令：
- * - mycc start  启动守护进程
- * - mycc stop   停止守护进程
- * - mycc status 查看状态
- * - mycc token  查看 Access Token
+ * - opentermux start  启动守护进程
+ * - opentermux stop   停止守护进程
+ * - opentermux status 查看状态
+ * - opentermux token  查看 Access Token
  */
 
 import { Command } from 'commander';
@@ -16,22 +16,30 @@ import * as os from 'os';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { Daemon } from './daemon.js';
-import { readAccessToken } from './pairing.js';
+import { readAccessToken } from './auth-manager.js';
 
 // ============================================================================
 // 常量定义
 // ============================================================================
 
 /** 配置目录 */
-const CONFIG_DIR = path.join(os.homedir(), '.mycc');
+const CONFIG_DIR = path.join(os.homedir(), '.opentermux');
 
-/** 认证数据文件路径（沿用 pairing.json 文件名，保持向后兼容） */
-const AUTH_DATA_FILE = path.join(CONFIG_DIR, 'pairing.json');
+/** 认证数据文件路径 */
+const AUTH_DATA_FILE = path.join(CONFIG_DIR, 'auth.json');
 
-/** Token 脱敏显示：保留前缀 mycc-(5字符) + 前 4 位 hex + ... + 后 4 位 hex，共需至少 13 字符 */
+/** Token 脱敏显示：保留前缀和前后各 4 位随机段 */
 function maskToken(token: string): string {
-  if (token.length <= 13) return token;
-  return `${token.slice(0, 9)}...${token.slice(-4)}`;
+  const dashIndex = token.indexOf('-');
+  if (dashIndex === -1) {
+    return token.length <= 8 ? token : `${token.slice(0, 4)}...${token.slice(-4)}`;
+  }
+  const prefix = token.slice(0, dashIndex + 1);
+  const body = token.slice(dashIndex + 1);
+  if (body.length <= 8) {
+    return token;
+  }
+  return `${prefix}${body.slice(0, 4)}...${body.slice(-4)}`;
 }
 
 /** PID 文件路径 */
@@ -121,9 +129,9 @@ async function readStatusFile(): Promise<Record<string, unknown> | null> {
 const program = new Command();
 
 program
-  .name('mycc')
-  .description('MyCC - 远程控制 Claude Code 守护进程')
-  .version('0.1.0');
+  .name('opentermux')
+  .description('OpenTermux - 远程控制终端会话守护进程')
+  .version('1.0.0');
 
 /**
  * start 命令 - 启动守护进程
@@ -183,7 +191,7 @@ program
           } catch (readErr) {
             // I7: 区分文件不存在（正常情况）和其他错误
             if ((readErr as NodeJS.ErrnoException).code === 'ENOENT') {
-              console.log('提示: 运行 pnpm --filter @mycc/daemon token 获取 Access Token');
+              console.log('提示: 运行 pnpm --filter @opentermux/daemon token 获取 Access Token');
             } else {
               console.warn('读取 Access Token 失败:', readErr instanceof Error ? readErr.message : readErr);
             }
@@ -347,7 +355,7 @@ program
   .description('查看 Access Token')
   .action(async () => {
     try {
-      // I12: 复用 pairing.ts 的 readAccessToken，消除重复迁移逻辑
+      // I12: 复用 auth-manager.ts 的 readAccessToken，消除重复迁移逻辑
       const { token, migrated } = await readAccessToken();
       console.log(`Access Token: ${token}`);
       if (migrated) {
@@ -357,12 +365,12 @@ program
       // 检查 daemon 是否在运行
       const pid = await readPidFile();
       if (!pid || !isProcessRunning(pid)) {
-        console.log('\n注意: 守护进程未在运行，请先执行 mycc start');
+        console.log('\n注意: 守护进程未在运行，请先执行 opentermux start');
       }
     } catch (error) {
       // I11: 简化 ENOENT 检查
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        console.log('未找到配置文件，请先启动守护进程 (mycc start)');
+        console.log('未找到配置文件，请先启动守护进程 (opentermux start)');
       } else {
         console.error('读取配置文件失败:', error instanceof Error ? error.message : error);
       }
