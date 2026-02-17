@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { DaemonProfile, SessionOptions } from '@opentermux/shared';
+import type { SessionOptions } from '@opentermux/shared';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useSessionsStore } from '../stores/sessionsStore';
 import { useSessions } from '../hooks/useSessions';
@@ -18,6 +18,7 @@ import { TerminalView } from '../components/TerminalView';
 import { NewSessionDialog } from '../components/NewSessionDialog';
 import { TerminalShortcutBar } from '../components/TerminalShortcutBar';
 import { useWebPreferencesStore } from '../stores/webPreferencesStore';
+import { buildDefaultSessionOptions } from '../utils/sessionDefaults';
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -445,37 +446,4 @@ export function DashboardPage() {
       />
     </div>
   );
-}
-
-function buildDefaultSessionOptions(profile: DaemonProfile | null): SessionOptions | undefined {
-  if (!profile) {
-    return undefined;
-  }
-
-  const options: SessionOptions = {};
-  if (profile.defaultCwd) {
-    options.cwd = profile.defaultCwd;
-  }
-
-  const startupCommand = resolveStartupCommand(profile);
-  if (startupCommand) {
-    options.startupCommand = startupCommand;
-  }
-
-  return Object.keys(options).length > 0 ? options : undefined;
-}
-
-function resolveStartupCommand(profile: DaemonProfile): string | null {
-  switch (profile.defaultCommandMode) {
-    case 'zsh':
-      return 'zsh';
-    case 'bash':
-      return 'bash';
-    case 'tmux':
-      return 'tmux';
-    case 'custom':
-      return profile.defaultCommandValue?.trim() || null;
-    default:
-      return null;
-  }
 }

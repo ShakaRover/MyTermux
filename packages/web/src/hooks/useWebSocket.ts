@@ -249,7 +249,7 @@ export function useWebSocket(): UseWebSocketReturn {
   };
 }
 
-function buildWsUrl(relayUrl: string, ticket: string): string {
+export function buildWsUrl(relayUrl: string, ticket: string): string {
   const withTicket = (base: string): string => {
     const separator = base.includes('?') ? '&' : '?';
     return `${base}${separator}ticket=${encodeURIComponent(ticket)}`;
