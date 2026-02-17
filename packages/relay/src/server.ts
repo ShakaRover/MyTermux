@@ -113,6 +113,7 @@ export function createServer(options: ServerOptions = {}) {
 
     return c.json({
       success: true,
+      authenticated: true,
       username,
       expiresAt: session.expiresAt,
     });

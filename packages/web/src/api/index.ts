@@ -13,6 +13,13 @@ export interface WebAuthSession {
   expiresAt: number;
 }
 
+interface LoginWebAuthResponse {
+  authenticated?: boolean;
+  success?: boolean;
+  username: string;
+  expiresAt: number;
+}
+
 export interface DaemonListResponse {
   onlineDaemons: OnlineDaemon[];
   profiles: DaemonProfile[];
@@ -44,10 +51,16 @@ export interface DaemonProfilePatchPayload {
 }
 
 export async function loginWebAdmin(username: string, password: string): Promise<WebAuthSession> {
-  return apiRequest<WebAuthSession>('/web-auth/login', {
+  const response = await apiRequest<LoginWebAuthResponse>('/web-auth/login', {
     method: 'POST',
     body: { username, password },
   });
+
+  return {
+    authenticated: response.authenticated ?? response.success ?? true,
+    username: response.username,
+    expiresAt: response.expiresAt,
+  };
 }
 
 export async function logoutWebAdmin(): Promise<void> {

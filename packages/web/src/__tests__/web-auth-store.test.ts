@@ -35,6 +35,22 @@ describe('webAuthStore', () => {
     expect(state.initialized).toBe(true);
   });
 
+  it('login should set authenticated state on success', async () => {
+    vi.mocked(loginWebAdmin).mockResolvedValue({
+      authenticated: true,
+      username: 'admin',
+      expiresAt: Date.now() + 60_000,
+    });
+
+    await useWebAuthStore.getState().login('admin', 'secret-pass');
+
+    const state = useWebAuthStore.getState();
+    expect(state.status).toBe('authenticated');
+    expect(state.username).toBe('admin');
+    expect(state.error).toBeNull();
+    expect(state.initialized).toBe(true);
+  });
+
   it('login should set error and rethrow when request fails', async () => {
     vi.mocked(loginWebAdmin).mockRejectedValue(new Error('bad credentials'));
 

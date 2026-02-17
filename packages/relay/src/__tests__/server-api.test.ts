@@ -115,6 +115,10 @@ describe('Relay API integration', () => {
     });
 
     expect(loginResponse.status).toBe(200);
+    const loginBody = await loginResponse.json() as { authenticated?: boolean; success?: boolean; username: string };
+    expect(loginBody.success).toBe(true);
+    expect(loginBody.authenticated).toBe(true);
+    expect(loginBody.username).toBe('admin');
     const cookies = extractCookieHeader(loginResponse);
     expect(cookies.includes('opentermux_web_session=')).toBe(true);
 
