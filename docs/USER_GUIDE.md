@@ -1,22 +1,24 @@
 # OpenTermux 用户指南
 
-## 1. OpenTermux 是什么
+## 1. 使用流程总览
 
-OpenTermux 提供 Web 远程终端能力：
+OpenTermux 当前推荐流程：
 
-- 本地运行 daemon
-- 浏览器连接 relay
-- 在网页里操作本地终端
+1. 启动 relay（Web 登录入口 + 中继）
+2. 启动 daemon（提供 Access Token）
+3. 浏览器登录 Web 管理中心
+4. 在 Web 中配置/绑定 daemon profile
+5. 连接 daemon 并进入终端会话
 
 ## 2. 前置要求
 
 - Node.js >= 20
 - pnpm >= 9
-- 可访问 relay 的网络环境
+- relay 与 daemon 网络可达
 
-## 3. 首次使用
+## 3. 首次启动
 
-### 3.1 安装依赖
+### 3.1 安装与构建
 
 ```bash
 pnpm install
@@ -34,15 +36,15 @@ pnpm --filter @opentermux/relay start:fg
 - HTTP: `http://localhost:3000`
 - WebSocket: `ws://localhost:3000/ws`
 
+> 开发环境未设置管理员环境变量时，默认账号：`admin`，默认密码：`opentermux`。
+
 ### 3.3 启动 daemon
 
 ```bash
 pnpm --filter @opentermux/daemon start:fg
 ```
 
-Daemon 会输出 Access Token（展示时可能脱敏）。
-
-如需完整 Token：
+查看完整 token：
 
 ```bash
 pnpm --filter @opentermux/daemon token
@@ -54,17 +56,33 @@ pnpm --filter @opentermux/daemon token
 pnpm --filter @opentermux/web dev
 ```
 
-浏览器打开 `http://localhost:5173`，在认证页输入完整 Access Token。
+浏览器打开 `http://localhost:5173`，进入 `/login` 登录。
 
-## 4. 使用终端会话
+## 4. Daemon 管理中心
 
-1. 进入 Dashboard
-2. 点击“新建会话”
-3. 可选填写工作目录
-4. 在终端视图输入命令并查看输出
-5. 可关闭会话或继续保持运行
+登录后进入 `/daemons`：
 
-## 5. 常用运维命令
+1. 新建 profile（名称、token、默认目录、默认命令）
+2. 将 profile 绑定到在线 daemon（可选）
+3. 点击“连接”进入 `/dashboard`
+
+默认命令支持：
+
+- `zsh`
+- `bash`
+- `tmux`
+- `custom`
+
+## 5. Dashboard 会话操作
+
+在 `/dashboard`：
+
+1. 创建会话（可选覆盖工作目录与启动命令）
+2. 左侧会话列表可查看 `PID`
+3. 支持输入、输出、resize、关闭会话
+4. 移动端在软键盘弹出时显示快捷键栏（可在 `/daemons` 配置）
+
+## 6. 常用命令
 
 ```bash
 # daemon
@@ -79,37 +97,34 @@ pnpm --filter @opentermux/relay stop
 pnpm --filter @opentermux/relay status
 ```
 
-## 6. 本地数据位置
+## 7. 本地数据目录
 
-- 运行目录：`~/.opentermux`
-- 认证文件：`~/.opentermux/auth.json`
-- daemon 状态：`~/.opentermux/daemon.status`
-- Web 本地缓存键：`opentermux:auth_token`
+`~/.opentermux`
 
-## 7. 故障排查
+- `auth.json`：daemon 认证信息
+- `daemon.pid` / `daemon.status`
+- `relay.pid` / `relay.log`
+- `relay.db`：Web 登录、锁定计数、profile、偏好配置
 
-### 7.1 无法连接 relay
+## 8. 故障排查
 
-- 检查 relay 是否运行
-- 访问 `http://<relay-host>:<relay-port>/health`
-- 检查防火墙与端口映射
+### 8.1 Relay 状态正常但 Web 登录失败
 
-### 7.2 Token 认证失败
+- 检查管理员环境变量是否正确（见 `docs/DEPLOYMENT.md`）
+- 查看 `relay.log`
 
-- 确认 Token 前缀是 `opentermux-`
-- 确认 daemon 在线
-- 在 daemon 侧重新生成 Token：
+### 8.2 Daemon 在线但无法连接
 
-```bash
-pnpm --filter @opentermux/daemon token
-```
+- 确认 profile 已配置有效 token
+- 在 `/daemons` 中重新绑定 daemonId
+- 确认 token 前缀为 `opentermux-`
 
-### 7.3 Web 一直无法恢复连接
+### 8.3 终端无输出或频繁断开
 
-- 清理浏览器本地缓存（`opentermux:auth_token`）
-- 刷新页面并重新输入 Token
+- 检查 relay 与 daemon 网络
+- 查看 `GET /health` 和 daemon 日志
+- 重连 profile（单活连接会自动清理旧连接）
 
-## 8. 历史目录说明
+## 9. 历史目录说明
 
-OpenTermux 不会自动迁移或删除历史版本目录。
-如需清理，请手动处理旧版本数据。
+OpenTermux 不会自动迁移或删除历史版本目录，请手动处理旧数据。

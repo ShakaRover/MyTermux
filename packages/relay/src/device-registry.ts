@@ -8,7 +8,7 @@
  */
 
 import type { WebSocket } from 'ws';
-import type { DeviceType } from '@opentermux/shared';
+import type { DeviceType, OnlineDaemon } from '@opentermux/shared';
 
 /** 设备连接信息 */
 interface DeviceConnection {
@@ -308,6 +308,37 @@ export class DeviceRegistry {
       clients,
       accessTokens: this.accessTokens.size,
     };
+  }
+
+  /**
+   * 获取在线 daemon 快照（用于 Web 管理中心）
+   */
+  getOnlineDaemons(): OnlineDaemon[] {
+    const daemons: OnlineDaemon[] = [];
+
+    for (const [daemonId, device] of this.devices.entries()) {
+      if (device.deviceType !== 'daemon') {
+        continue;
+      }
+
+      let connectedClients = 0;
+      for (const peerId of device.authenticatedPeerIds) {
+        const peer = this.devices.get(peerId);
+        if (peer?.deviceType === 'client') {
+          connectedClients++;
+        }
+      }
+
+      daemons.push({
+        daemonId,
+        connectedAt: device.connectedAt,
+        lastHeartbeat: device.lastHeartbeat,
+        connectedClients,
+      });
+    }
+
+    daemons.sort((a, b) => b.lastHeartbeat - a.lastHeartbeat);
+    return daemons;
   }
 
   /**

@@ -1,26 +1,14 @@
 # OpenTermux 测试文档
 
-## 1. 自动化测试
+## 1. 自动化验证
 
-### 1.1 全量测试
-
-```bash
-pnpm turbo run test
-```
-
-### 1.2 类型检查
+### 1.1 全量
 
 ```bash
-pnpm turbo run typecheck
+pnpm turbo run build typecheck test
 ```
 
-### 1.3 构建验证
-
-```bash
-pnpm turbo run build
-```
-
-## 2. 包级测试
+### 1.2 包级
 
 ```bash
 pnpm --filter @opentermux/shared test
@@ -29,14 +17,15 @@ pnpm --filter @opentermux/daemon test
 pnpm --filter @opentermux/web test
 ```
 
-说明：
+当前覆盖重点：
 
-- `@opentermux/shared` 与 `@opentermux/relay` 含主要单元测试
-- `@opentermux/daemon`、`@opentermux/web` 当前无单测文件，命令会以 `--passWithNoTests` 通过
+- `shared`: 协议/加密
+- `relay`: registry、websocket-handler、密码哈希、暴力破解、ws-ticket
+- `daemon`: `TerminalSession` 的 `pid/startupCommand`
 
-## 3. 手工冒烟测试
+## 2. 手工冒烟
 
-### 3.1 启动组件
+### 2.1 启动组件
 
 ```bash
 pnpm --filter @opentermux/relay start:fg
@@ -44,37 +33,43 @@ pnpm --filter @opentermux/daemon start:fg
 pnpm --filter @opentermux/web dev
 ```
 
-### 3.2 认证流程
+### 2.2 Web 登录与管理
 
-1. 浏览器打开 `http://localhost:5173`
-2. 输入 `opentermux-` 前缀的 Access Token
-3. 认证成功后跳转 Dashboard
+1. 打开 `http://localhost:5173/login`
+2. 使用管理员账号登录
+3. 在 `/daemons` 新建 profile（含 token）
+4. 绑定在线 daemon
+5. 点击“连接”进入 `/dashboard`
 
-### 3.3 终端流程
+### 2.3 终端会话
 
-1. 创建新会话
-2. 输入命令（如 `pwd`, `ls`, `echo hello`）
-3. 验证输出实时回显
-4. 调整浏览器窗口，验证终端 resize 生效
-5. 关闭会话，验证列表同步更新
+1. 验证会话自动创建（带 profile 默认参数）
+2. 新建会话并发送输入
+3. 校验会话列表显示 `PID`
+4. 调整窗口，验证 resize 正常
+5. 关闭会话，验证列表同步
 
-## 4. 协议一致性扫描
+### 2.4 移动端快捷栏
 
-执行：
+1. 在触屏设备打开 `/dashboard`
+2. 聚焦终端并弹出软键盘
+3. 验证快捷栏出现
+4. 点击快捷键后终端收到输入
+5. 在 `/daemons` 修改快捷键配置后刷新验证生效
+
+## 3. 协议与命名扫描
 
 ```bash
-rg -n --glob '!node_modules' 'token_auth|token_ack|session:create|session:output'
+rg -n --glob '!node_modules' 'token_auth|token_ack|opentermux-|opentermux_web_session|ws-ticket'
 ```
 
-期望：
+期望：核心协议、命名与实现一致。
 
-- 协议关键字在实现与文档中一致
-- 无过期流程描述
+## 4. 验收清单
 
-## 5. 验收清单
-
-- [ ] `pnpm turbo run build typecheck test` 全绿
-- [ ] Web 可使用 Access Token 成功认证
-- [ ] 终端会话创建、输入、输出、关闭正常
-- [ ] 文档命令与实际命令一致
-- [ ] 协议文档与实现一致（`token_auth` / `token_ack`）
+- [ ] `build/typecheck/test` 全绿
+- [ ] Web 未登录不可操作 daemon 与会话
+- [ ] 登录后可查看在线 daemon 与 profile 并连接
+- [ ] ws-ticket 过期/复用会被拒绝
+- [ ] 会话列表显示 PID
+- [ ] 移动端快捷栏按条件显示且可配置

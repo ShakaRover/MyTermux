@@ -1,109 +1,71 @@
 # OpenTermux 开发文档
 
-## 项目定位
+## 1. 当前产品模型
 
-OpenTermux 是 Web 远程终端系统，核心链路：
+OpenTermux 已切换为：
 
-1. daemon 在本地创建终端会话
-2. relay 负责 WebSocket 转发与 Token 认证
-3. web 通过 Access Token 连接 daemon，操作终端
+- Web 独立登录（非 daemon token 直登）
+- 登录后管理 daemon profile 并连接
+- 单活 daemon 连接模型（支持快速切换）
+- 终端会话仅 `terminal`
 
-## 仓库结构
+## 2. 核心链路
+
+1. Relay 提供 Web Auth、Daemon 管理 API、ws-ticket、WebSocket 中继
+2. Daemon 向 Relay 注册并提供 Access Token
+3. Web 登录后创建/编辑 profile，申请 ws-ticket，连接 daemon
+4. 应用层会话消息走 E2E 加密
+
+## 3. 目录结构
 
 ```text
-.
-├── packages/
-│   ├── shared/
-│   │   ├── src/
-│   │   │   ├── types.ts
-│   │   │   ├── protocol.ts
-│   │   │   └── crypto.ts
-│   ├── relay/
-│   │   ├── src/
-│   │   │   ├── cli.ts
-│   │   │   ├── server.ts
-│   │   │   ├── device-registry.ts
-│   │   │   ├── message-router.ts
-│   │   │   └── websocket-handler.ts
-│   ├── daemon/
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   ├── daemon.ts
-│   │   │   ├── auth-manager.ts
-│   │   │   ├── session-manager.ts
-│   │   │   ├── terminal-session.ts
-│   │   │   └── ws-client.ts
-│   └── web/
-│       ├── src/
-│       │   ├── App.tsx
-│       │   ├── pages/AuthPage.tsx
-│       │   ├── pages/DashboardPage.tsx
-│       │   ├── hooks/useWebSocket.ts
-│       │   ├── hooks/useSessions.ts
-│       │   ├── stores/connectionStore.ts
-│       │   └── stores/sessionsStore.ts
-├── docs/
-└── turbo.json
+packages/
+  shared/   协议与类型（SessionInfo.pid / startupCommand 等）
+  relay/    API + WS + SQLite（web_sessions/login_attempts/daemon_profiles/web_preferences）
+  daemon/   终端会话与 token 管理
+  web/      /login /daemons /dashboard 页面与状态管理
 ```
 
-## 本地开发
+## 4. 本地开发
 
 ```bash
 pnpm install
 pnpm turbo run build
 ```
 
-### 启动 relay
+启动：
 
 ```bash
 pnpm --filter @opentermux/relay start:fg
-```
-
-### 启动 daemon
-
-```bash
 pnpm --filter @opentermux/daemon start:fg
-```
-
-### 启动 web
-
-```bash
 pnpm --filter @opentermux/web dev
 ```
 
-## 协议原则
+## 5. 协议与类型关键点
 
-- 传输层仅负责路由与认证协作
-- 应用层消息默认 E2E 加密
-- 当前仅支持 `terminal` 会话类型
+- `SessionType = 'terminal'`
+- `SessionInfo.pid?: number`
+- `TerminalSessionOptions.startupCommand?: string`
+- WebSocket client 必须先拿 `ws-ticket`
 
-参考：`docs/API.md`
+## 6. 代码约定
 
-## 代码约定
+- 包作用域：`@opentermux/*`
+- CLI：`opentermux` / `opentermux-relay`
+- 术语：统一使用 `auth`（不再使用 `pairing`）
+- 运行目录：`~/.opentermux`
 
-- 包依赖统一使用 `@opentermux/*`
-- CLI 统一：`opentermux` / `opentermux-relay`
-- 认证术语统一使用 `auth`
-- 存储目录统一 `~/.opentermux`
-
-## 常见开发命令
+## 7. 常用命令
 
 ```bash
-# 类型检查
 pnpm turbo run typecheck
-
-# 测试
 pnpm turbo run test
-
-# 构建
 pnpm turbo run build
-
-# 清理
 pnpm turbo run clean
 ```
 
-## 调试建议
+## 8. 调试建议
 
-- relay 连接问题：优先看 `GET /health` 与 relay 日志
-- daemon 认证问题：检查 `~/.opentermux/auth.json` 与 `opentermux token`
-- web 认证问题：清理本地 `opentermux:auth_token` 后重试
+- 登录问题：检查 `RELAY_ADMIN_*`、`RELAY_WEB_MASTER_KEY`、`relay.db`
+- ws 连接问题：先看 `/api/ws-ticket` 再看 `/ws` 日志
+- daemon 连接问题：检查 profile token、daemon 在线状态与绑定关系

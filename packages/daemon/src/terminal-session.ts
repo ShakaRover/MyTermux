@@ -106,6 +106,11 @@ export class TerminalSession extends EventEmitter {
       });
 
       this.setStatus('running');
+
+      // 会话启动后自动执行默认命令（例如 zsh/tmux/custom）
+      if (this.options.startupCommand) {
+        this.pty.write(`${this.options.startupCommand}\r`);
+      }
     } catch (error) {
       this.setStatus('error');
       this.emit('error', error instanceof Error ? error : new Error(String(error)));
@@ -157,6 +162,7 @@ export class TerminalSession extends EventEmitter {
       id: this.id,
       type: 'terminal',
       status: this._status,
+      ...(this.pty?.pid !== undefined && { pid: this.pty.pid }),
       createdAt: this.createdAt,
       title: this.getTitle(),
     };

@@ -13,6 +13,7 @@ import { WebSocketHandler } from '../websocket-handler';
 import type { DeviceRegistry } from '../device-registry';
 import type { MessageRouter } from '../message-router';
 import { createTransportMessage } from '@opentermux/shared';
+import type { WsTicketService } from '../auth/ws-ticket';
 
 // ============================================================================
 // Mock 工具
@@ -61,6 +62,14 @@ function createMockRouter(): MessageRouter {
   } as unknown as MessageRouter;
 }
 
+/** 创建模拟 WsTicketService */
+function createMockWsTicketService(): WsTicketService {
+  return {
+    issue: vi.fn(),
+    consume: vi.fn(),
+  } as unknown as WsTicketService;
+}
+
 /** 模拟发送注册消息并等待处理 */
 function sendRegisterMessage(
   ws: import('ws').WebSocket,
@@ -99,11 +108,21 @@ describe('WebSocketHandler', () => {
   let handler: WebSocketHandler;
   let registry: DeviceRegistry;
   let router: MessageRouter;
+  let wsTicketService: WsTicketService;
 
   beforeEach(() => {
     registry = createMockRegistry();
     router = createMockRouter();
-    handler = new WebSocketHandler(registry, router);
+    wsTicketService = createMockWsTicketService();
+    vi.mocked(wsTicketService.consume).mockImplementation((ticket: string) => ({
+      ticket,
+      accessToken: 'valid-token',
+      profileId: 'profile-1',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 60_000,
+      daemonId: 'daemon-1',
+    }));
+    handler = new WebSocketHandler(registry, router, wsTicketService);
   });
 
   // --------------------------------------------------------------------------
@@ -113,7 +132,7 @@ describe('WebSocketHandler', () => {
   describe('handleClose - ws 身份检查', () => {
     it('当前 ws 关闭时应注销设备并通知已认证对端设备', () => {
       const ws = createMockWs();
-      handler.handleConnection(ws);
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
 
       // 模拟注册
       sendRegisterMessage(ws, 'client-1', 'client', 'pk-1');
@@ -133,8 +152,8 @@ describe('WebSocketHandler', () => {
       const oldWs = createMockWs();
       const newWs = createMockWs();
 
-      handler.handleConnection(oldWs);
-      handler.handleConnection(newWs);
+      handler.handleConnection(oldWs, '/ws?ticket=ticket-old');
+      handler.handleConnection(newWs, '/ws?ticket=ticket-new');
 
       // 旧 ws 注册 client-1
       sendRegisterMessage(oldWs, 'client-1', 'client', 'pk-old');
@@ -162,7 +181,7 @@ describe('WebSocketHandler', () => {
       // 此测试覆盖：即使 cleanupOldWsMapping 未被调用（理论上不会发生），
       // handleClose 中的 currentWs === ws 检查也能保护新连接
       const oldWs = createMockWs();
-      handler.handleConnection(oldWs);
+      handler.handleConnection(oldWs, '/ws?ticket=ticket-old');
 
       // 注册 client-1
       sendRegisterMessage(oldWs, 'client-1', 'client', 'pk-old');
@@ -181,7 +200,7 @@ describe('WebSocketHandler', () => {
 
     it('未注册的 ws 关闭不应触发任何注销或通知', () => {
       const ws = createMockWs();
-      handler.handleConnection(ws);
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
 
       // 不发送注册消息，直接关闭
       triggerClose(ws, 1000, '未注册');
@@ -200,8 +219,8 @@ describe('WebSocketHandler', () => {
       const ws1 = createMockWs();
       const ws2 = createMockWs();
 
-      handler.handleConnection(ws1);
-      handler.handleConnection(ws2);
+      handler.handleConnection(ws1, '/ws?ticket=ticket-1');
+      handler.handleConnection(ws2, '/ws?ticket=ticket-2');
 
       // ws1 注册 daemon-1
       sendRegisterMessage(ws1, 'daemon-1', 'daemon', 'pk-1', 'token-1');
@@ -227,8 +246,8 @@ describe('WebSocketHandler', () => {
       const oldWs = createMockWs();
       const newWs = createMockWs();
 
-      handler.handleConnection(oldWs);
-      handler.handleConnection(newWs);
+      handler.handleConnection(oldWs, '/ws?ticket=ticket-old');
+      handler.handleConnection(newWs, '/ws?ticket=ticket-new');
 
       // 旧 ws 先 register
       sendRegisterMessage(oldWs, 'client-1', 'client', 'pk-old');
@@ -258,7 +277,7 @@ describe('WebSocketHandler', () => {
   describe('handleRegister', () => {
     it('应成功注册设备并发送确认消息', () => {
       const ws = createMockWs();
-      handler.handleConnection(ws);
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
 
       sendRegisterMessage(ws, 'daemon-1', 'daemon', 'pk-1', 'token-1');
 
@@ -277,7 +296,7 @@ describe('WebSocketHandler', () => {
 
     it('无效 JSON payload 应发送错误', () => {
       const ws = createMockWs();
-      handler.handleConnection(ws);
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
 
       const message = createTransportMessage('register', 'client-1', 'not-json{');
       (ws as unknown as EventEmitter).emit('message', Buffer.from(JSON.stringify(message)));
@@ -296,7 +315,7 @@ describe('WebSocketHandler', () => {
   describe('handleTokenAuth', () => {
     it('Token 有效时应发送成功响应给 client 和 daemon', () => {
       const ws = createMockWs();
-      handler.handleConnection(ws);
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
 
       vi.mocked(registry.getWebSocket).mockReturnValue(undefined as unknown as import('ws').WebSocket);
       vi.mocked(registry.validateAccessToken).mockReturnValue('daemon-1');
@@ -325,7 +344,7 @@ describe('WebSocketHandler', () => {
 
     it('Token 无效时应发送失败响应并关闭连接', () => {
       const ws = createMockWs();
-      handler.handleConnection(ws);
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
 
       vi.mocked(registry.getWebSocket).mockReturnValue(undefined as unknown as import('ws').WebSocket);
       vi.mocked(registry.validateAccessToken).mockReturnValue(null);
@@ -352,7 +371,7 @@ describe('WebSocketHandler', () => {
       expect(handler.getStats().activeConnections).toBe(0);
 
       const ws = createMockWs();
-      handler.handleConnection(ws);
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
       sendRegisterMessage(ws, 'client-1', 'client', 'pk-1');
 
       expect(handler.getStats().activeConnections).toBe(1);

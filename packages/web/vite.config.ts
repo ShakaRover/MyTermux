@@ -29,16 +29,22 @@ export default defineConfig({
     // 支持通过环境变量配置 host 和 port
     host: process.env.VITE_HOST || 'localhost',
     port: Number(process.env.VITE_PORT) || 5173,
-    // HTTPS 模式下代理 WebSocket 到 Relay，避免 Mixed Content
-    ...(enableHttps && {
-      proxy: {
-        '/ws': {
-          target: extractProxyTarget(relayTarget),
-          ws: true,
-          changeOrigin: true,
-        },
+    // 始终代理 /ws 与 /api，保证本地开发使用同域 Cookie 会话
+    proxy: {
+      '/ws': {
+        target: extractProxyTarget(relayTarget),
+        ws: true,
+        changeOrigin: true,
       },
-    }),
+      '/api': {
+        target: extractProxyTarget(relayTarget),
+        changeOrigin: true,
+      },
+      '/health': {
+        target: extractProxyTarget(relayTarget),
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     outDir: 'dist',

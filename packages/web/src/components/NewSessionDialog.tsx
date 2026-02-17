@@ -5,6 +5,7 @@
  */
 
 import { useState, useCallback } from 'react';
+import type { SessionOptions } from '@opentermux/shared';
 
 /** 新建会话对话框 Props */
 export interface NewSessionDialogProps {
@@ -13,7 +14,7 @@ export interface NewSessionDialogProps {
   /** 关闭回调 */
   onClose: () => void;
   /** 创建会话回调 */
-  onCreate: (cwd?: string) => void;
+  onCreate: (options?: SessionOptions) => void;
   /** 额外的 CSS 类名 */
   className?: string;
 }
@@ -28,17 +29,31 @@ export function NewSessionDialog({
   className = '',
 }: NewSessionDialogProps) {
   const [cwd, setCwd] = useState('');
+  const [startupCommand, setStartupCommand] = useState('');
 
   const handleCreate = useCallback(() => {
-    onCreate(cwd.trim() || undefined);
+    const options: SessionOptions = {};
+    const trimmedCwd = cwd.trim();
+    const trimmedCommand = startupCommand.trim();
+
+    if (trimmedCwd) {
+      options.cwd = trimmedCwd;
+    }
+    if (trimmedCommand) {
+      options.startupCommand = trimmedCommand;
+    }
+
+    onCreate(Object.keys(options).length > 0 ? options : undefined);
     // 重置表单
     setCwd('');
+    setStartupCommand('');
     onClose();
-  }, [cwd, onCreate, onClose]);
+  }, [cwd, startupCommand, onCreate, onClose]);
 
   const handleClose = useCallback(() => {
     // 重置表单
     setCwd('');
+    setStartupCommand('');
     onClose();
   }, [onClose]);
 
@@ -103,6 +118,26 @@ export function NewSessionDialog({
             value={cwd}
             onChange={(e) => setCwd(e.target.value)}
             placeholder="例如: /home/user/projects"
+            className="
+              w-full px-4 py-3 rounded-lg
+              bg-gray-800 border border-gray-700
+              text-gray-100 placeholder-gray-500
+              focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent
+              transition-all duration-200
+            "
+          />
+        </div>
+
+        {/* 启动命令输入 */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            启动命令 <span className="text-gray-500">(可选)</span>
+          </label>
+          <input
+            type="text"
+            value={startupCommand}
+            onChange={(e) => setStartupCommand(e.target.value)}
+            placeholder="例如: tmux 或 zsh"
             className="
               w-full px-4 py-3 rounded-lg
               bg-gray-800 border border-gray-700

@@ -1,48 +1,84 @@
-/**
- * 应用主组件
- *
- * 配置路由和全局布局
- */
-
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthPage } from './pages/AuthPage';
+import { useEffect } from 'react';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { LoginPage } from './pages/LoginPage';
+import { DaemonHubPage } from './pages/DaemonHubPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { useConnectionStore } from './stores/connectionStore';
+import { useWebAuthStore } from './stores/webAuthStore';
 
-/**
- * 根路由重定向组件
- *
- * 根据连接状态自动重定向到认证页面或仪表盘
- */
 function RootRedirect() {
-  const { state } = useConnectionStore();
+  const { status } = useWebAuthStore();
 
-  // 如果已认证，跳转到仪表盘
-  if (state === 'authenticated') {
-    return <Navigate to="/dashboard" replace />;
+  if (status === 'checking') {
+    return <LoadingScreen />;
   }
 
-  // 否则跳转到认证页面
-  return <Navigate to="/auth" replace />;
+  if (status === 'authenticated') {
+    return <Navigate to="/daemons" replace />;
+  }
+
+  return <Navigate to="/login" replace />;
 }
 
-/**
- * 应用主组件
- */
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { status } = useWebAuthStore();
+
+  if (status === 'checking') {
+    return <LoadingScreen />;
+  }
+
+  if (status !== 'authenticated') {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="flex items-center gap-3 text-gray-300">
+        <div className="w-5 h-5 rounded-full border-2 border-gray-600 border-t-emerald-400 animate-spin" />
+        <span>正在检查登录状态...</span>
+      </div>
+    </div>
+  );
+}
+
 function App() {
+  const { initialized, checkSession } = useWebAuthStore();
+
+  useEffect(() => {
+    if (!initialized) {
+      void checkSession();
+    }
+  }, [initialized, checkSession]);
+
   return (
     <BrowserRouter>
       <Routes>
-        {/* 根路由重定向 */}
         <Route path="/" element={<RootRedirect />} />
+        <Route path="/login" element={<LoginPage />} />
 
-        {/* 认证页面 */}
-        <Route path="/auth" element={<AuthPage />} />
+        <Route
+          path="/daemons"
+          element={(
+            <ProtectedRoute>
+              <DaemonHubPage />
+            </ProtectedRoute>
+          )}
+        />
 
-        {/* 仪表盘页面 */}
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route
+          path="/dashboard"
+          element={(
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          )}
+        />
 
-        {/* 404 重定向 */}
+        {/* 兼容历史入口 */}
+        <Route path="/auth" element={<Navigate to="/login" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

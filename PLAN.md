@@ -1,36 +1,35 @@
-# OpenTermux 计划（1.0 基线）
+# OpenTermux 计划（Web 独立授权版）
 
 ## 目标
 
-将项目稳定为 OpenTermux 的 Web 远程终端基线，保证命名、协议、实现与文档一致。
+将 OpenTermux 稳定为“Web 登录后管理 daemon 并连接终端”的产品模型。
 
-## 当前基线
+## 当前基线（已落地）
 
-- 品牌与命令：`OpenTermux` / `opentermux` / `opentermux-relay`
-- 包作用域：`@opentermux/*`
-- Token 前缀：`opentermux-`
-- 本地目录：`~/.opentermux`
-- 认证文件：`auth.json`
-- 认证流程：`token_auth` / `token_ack`
-- 会话模型：仅 `terminal`
+1. Web 独立认证
+- Relay 提供 `/api/web-auth/*`
+- 会话方案：`HttpOnly Cookie + CSRF`
+- 登录失败防护：IP 限流 + 账号/IP 递增锁定（SQLite 持久化）
 
-## 已完成
+2. Daemon 管理中心
+- `/daemons` 页面可查看在线 daemon 与 profile
+- 支持 profile 新建/编辑/绑定
+- profile token 在 Relay 侧加密存储（AES-256-GCM）
 
-1. 全仓品牌与命令统一
-2. 认证术语统一为 `auth`
-3. 前端认证页重命名为 `AuthPage`
-4. 连接状态统一为 `authenticating` / `authenticated`
-5. 终端优先收敛，移除非终端会话模型
-6. 协议收敛，移除过期权限请求链路
-7. 版本升级：根与各包统一到 `1.0.0`
-8. 文档与示例更新：统一命令、路径、协议
+3. WebSocket 准入
+- 新增 `/api/ws-ticket`（60 秒一次性）
+- client 连接 `/ws` 必须携带 ticket
+- daemon 保持原注册流程
 
-## 发布约束（Breaking）
+4. 终端会话增强
+- `SessionInfo.pid` 已透传到 Web
+- `startupCommand` 已支持默认命令注入
+- Dashboard 左侧显示 PID
 
-- 不保留历史兼容命令
-- 不保留历史认证路由
-- 不自动迁移历史版本目录
-- 不保留历史认证协议描述
+5. 移动端交互
+- 新增终端快捷栏
+- 显示条件：触屏 + 终端聚焦 + 软键盘弹出
+- 快捷键/常用字符配置存储于 Relay `web_preferences`
 
 ## 验收门禁
 
@@ -38,11 +37,12 @@
 pnpm install
 pnpm turbo run clean
 pnpm turbo run build typecheck test
-rg -n --glob '!node_modules' 'token_auth|token_ack|opentermux-|@opentermux/'
+rg -n --glob '!node_modules' 'opentermux-|token_auth|token_ack|ws-ticket|opentermux_web_session'
 ```
 
-## 下一步建议
+## 后续迭代建议
 
-1. 增加 daemon/web 单元测试覆盖率
-2. 增加端到端场景测试（认证 + 终端 I/O + 重连）
-3. 为生产部署补充监控与告警模板
+1. 增加 Relay API 集成测试（HTTP 路由级）
+2. 增加 Web 端到端测试（登录->选 daemon->会话）
+3. 增加审计日志（登录失败、profile 变更、连接切换）
+4. 增加管理员密码轮换命令

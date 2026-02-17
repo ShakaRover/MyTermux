@@ -1,11 +1,14 @@
 /**
  * 仪表盘页面
  *
- * 显示会话列表和会话交互区
+ * - 当前活跃 daemon 的会话列表
+ * - 终端交互
+ * - 移动端快捷键栏
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { DaemonProfile, SessionOptions } from '@opentermux/shared';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useSessionsStore } from '../stores/sessionsStore';
 import { useSessions } from '../hooks/useSessions';
@@ -13,18 +16,30 @@ import { ConnectionStatus } from '../components/ConnectionStatus';
 import { SessionList } from '../components/SessionList';
 import { TerminalView } from '../components/TerminalView';
 import { NewSessionDialog } from '../components/NewSessionDialog';
+import { TerminalShortcutBar } from '../components/TerminalShortcutBar';
+import { useWebPreferencesStore } from '../stores/webPreferencesStore';
 
-/**
- * 仪表盘页面组件
- */
 export function DashboardPage() {
   const navigate = useNavigate();
   const [isNewSessionDialogOpen, setIsNewSessionDialogOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [terminalFocused, setTerminalFocused] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [softKeyboardVisible, setSoftKeyboardVisible] = useState(false);
 
-  const { state: connectionState, disconnect } = useConnectionStore();
-  const { sessions, activeSessionId, getActiveSession } =
-    useSessionsStore();
+  const {
+    state: connectionState,
+    daemonId,
+    activeProfile,
+    disconnect,
+  } = useConnectionStore();
+
+  const {
+    sessions,
+    activeSessionId,
+    isLoading,
+    getActiveSession,
+  } = useSessionsStore();
 
   const {
     createSession,
@@ -34,82 +49,165 @@ export function DashboardPage() {
     resizeTerminal,
   } = useSessions();
 
-  // 如果未认证，跳转到认证页面
+  const {
+    preferences,
+    loadPreferences,
+  } = useWebPreferencesStore();
+
+  const autoCreatedDaemonRef = useRef<string | null>(null);
+
+  const activeSession = getActiveSession();
+
   useEffect(() => {
     if (connectionState !== 'authenticated') {
-      navigate('/auth');
+      navigate('/daemons', { replace: true });
     }
   }, [connectionState, navigate]);
 
-  // 认证成功后刷新会话列表
+  useEffect(() => {
+    void loadPreferences().catch(() => undefined);
+  }, [loadPreferences]);
+
   useEffect(() => {
     if (connectionState === 'authenticated') {
-      refreshSessions().catch(console.error);
+      void refreshSessions().catch((error) => {
+        console.error('刷新会话列表失败:', error);
+      });
     }
   }, [connectionState, refreshSessions]);
 
-  // 获取当前活跃会话
-  const activeSession = getActiveSession();
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
 
-  // 处理断开连接
+    setIsTouchDevice('ontouchstart' in window || navigator.maxTouchPoints > 0);
+  }, []);
+
+  useEffect(() => {
+    if (!isTouchDevice || typeof window === 'undefined' || !window.visualViewport) {
+      setSoftKeyboardVisible(false);
+      return;
+    }
+
+    const viewport = window.visualViewport;
+    const threshold = 120;
+    let baselineHeight = viewport.height;
+
+    const handleViewportResize = () => {
+      if (viewport.height > baselineHeight) {
+        baselineHeight = viewport.height;
+      }
+
+      setSoftKeyboardVisible(baselineHeight - viewport.height > threshold);
+    };
+
+    viewport.addEventListener('resize', handleViewportResize);
+    handleViewportResize();
+
+    return () => {
+      viewport.removeEventListener('resize', handleViewportResize);
+      setSoftKeyboardVisible(false);
+    };
+  }, [isTouchDevice]);
+
+  useEffect(() => {
+    if (!daemonId) {
+      autoCreatedDaemonRef.current = null;
+      return;
+    }
+
+    if (connectionState !== 'authenticated' || isLoading) {
+      return;
+    }
+
+    if (autoCreatedDaemonRef.current === daemonId) {
+      return;
+    }
+
+    if (sessions.length > 0) {
+      autoCreatedDaemonRef.current = daemonId;
+      return;
+    }
+
+    autoCreatedDaemonRef.current = daemonId;
+
+    const defaults = buildDefaultSessionOptions(activeProfile);
+    void createSession(defaults).catch((error) => {
+      console.error('自动创建默认会话失败:', error);
+      autoCreatedDaemonRef.current = null;
+    });
+  }, [activeProfile, connectionState, createSession, daemonId, isLoading, sessions.length]);
+
+  const showShortcutBar = useMemo(() => {
+    return Boolean(
+      activeSessionId &&
+      terminalFocused &&
+      isTouchDevice &&
+      softKeyboardVisible &&
+      preferences,
+    );
+  }, [activeSessionId, terminalFocused, isTouchDevice, softKeyboardVisible, preferences]);
+
   const handleDisconnect = useCallback(() => {
     disconnect();
-    navigate('/auth');
+    navigate('/daemons', { replace: true });
   }, [disconnect, navigate]);
 
-  // 处理创建会话
   const handleCreateSession = useCallback(
-    async (cwd?: string) => {
+    async (options?: SessionOptions) => {
       try {
-        await createSession(cwd ? { cwd } : undefined);
-      } catch (err) {
-        console.error('创建会话失败:', err);
+        await createSession(options);
+      } catch (error) {
+        console.error('创建会话失败:', error);
       }
     },
-    [createSession]
+    [createSession],
   );
 
-  // 处理关闭会话
   const handleCloseSession = useCallback(
     async (sessionId: string) => {
       try {
         await closeSession(sessionId);
-      } catch (err) {
-        console.error('关闭会话失败:', err);
+      } catch (error) {
+        console.error('关闭会话失败:', error);
       }
     },
-    [closeSession]
+    [closeSession],
   );
 
-  // 处理终端输入
   const handleTerminalInput = useCallback(
     async (data: string) => {
-      if (!activeSessionId) return;
+      if (!activeSessionId) {
+        return;
+      }
+
       try {
         await sendInput(activeSessionId, data);
-      } catch (err) {
-        console.error('发送输入失败:', err);
+      } catch (error) {
+        console.error('发送输入失败:', error);
       }
     },
-    [activeSessionId, sendInput]
+    [activeSessionId, sendInput],
   );
 
-  // 处理终端尺寸变化
   const handleTerminalResize = useCallback(
     async (cols: number, rows: number) => {
-      if (!activeSessionId) return;
+      if (!activeSessionId) {
+        return;
+      }
+
       try {
         await resizeTerminal(activeSessionId, cols, rows);
-      } catch (err) {
-        console.error('调整终端尺寸失败:', err);
+      } catch (error) {
+        console.error('调整终端尺寸失败:', error);
       }
     },
-    [activeSessionId, resizeTerminal]
+    [activeSessionId, resizeTerminal],
   );
 
   return (
     <div className="h-screen bg-gray-950 flex overflow-hidden">
-      {/* 侧边栏 */}
       <aside
         className={`
           flex flex-col bg-gray-900 border-r border-gray-800
@@ -117,11 +215,10 @@ export function DashboardPage() {
           ${isSidebarCollapsed ? 'w-16' : 'w-72'}
         `}
       >
-        {/* 侧边栏头部 */}
         <div className="flex items-center justify-between p-4 border-b border-gray-800">
           {!isSidebarCollapsed && (
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-purple-600/20 text-purple-400 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-emerald-600/20 text-emerald-400 flex items-center justify-center">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
@@ -131,11 +228,15 @@ export function DashboardPage() {
                   />
                 </svg>
               </div>
-              <span className="font-semibold text-gray-100">OpenTermux</span>
+              <div>
+                <span className="font-semibold text-gray-100 block leading-tight">OpenTermux</span>
+                <span className="text-[11px] text-gray-500">{activeProfile?.name || daemonId || '未选择 daemon'}</span>
+              </div>
             </div>
           )}
+
           <button
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            onClick={() => setIsSidebarCollapsed((prev) => !prev)}
             className="p-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
             title={isSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
           >
@@ -155,26 +256,23 @@ export function DashboardPage() {
           </button>
         </div>
 
-        {/* 新建会话按钮 */}
         {!isSidebarCollapsed && (
-          <div className="p-3 border-b border-gray-800">
+          <div className="p-3 border-b border-gray-800 space-y-2">
             <button
               onClick={() => setIsNewSessionDialogOpen(true)}
-              className="
-                w-full flex items-center justify-center gap-2 px-4 py-2.5
-                bg-purple-600 hover:bg-purple-500 text-white rounded-lg
-                font-medium transition-colors
-              "
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 4v16m8-8H4"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               新建会话
+            </button>
+
+            <button
+              onClick={() => navigate('/daemons')}
+              className="w-full rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-200 hover:border-emerald-500"
+            >
+              切换 Daemon
             </button>
           </div>
         )}
@@ -183,26 +281,16 @@ export function DashboardPage() {
           <div className="p-2 border-b border-gray-800">
             <button
               onClick={() => setIsNewSessionDialogOpen(true)}
-              className="
-                w-full flex items-center justify-center p-2
-                bg-purple-600 hover:bg-purple-500 text-white rounded-lg
-                transition-colors
-              "
+              className="w-full flex items-center justify-center p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
               title="新建会话"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 4v16m8-8H4"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </button>
           </div>
         )}
 
-        {/* 会话列表 */}
         {!isSidebarCollapsed ? (
           <div className="flex-1 overflow-y-auto p-3">
             <SessionList onCloseSession={handleCloseSession} />
@@ -216,11 +304,7 @@ export function DashboardPage() {
                 className={`
                   w-full flex items-center justify-center p-2 rounded-lg
                   transition-colors
-                  ${
-                    session.id === activeSessionId
-                      ? 'bg-gray-700 border border-gray-600'
-                      : 'hover:bg-gray-800 border border-transparent'
-                  }
+                  ${session.id === activeSessionId ? 'bg-gray-700 border border-gray-600' : 'hover:bg-gray-800 border border-transparent'}
                 `}
                 title={session.title}
               >
@@ -234,10 +318,9 @@ export function DashboardPage() {
           </div>
         )}
 
-        {/* 底部状态栏 */}
         <div className="p-3 border-t border-gray-800">
           {!isSidebarCollapsed ? (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <ConnectionStatus />
               <button
                 onClick={handleDisconnect}
@@ -273,11 +356,9 @@ export function DashboardPage() {
         </div>
       </aside>
 
-      {/* 主内容区 */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {activeSession ? (
           <>
-            {/* 会话头部 */}
             <header className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-900/50">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-emerald-900/50 text-emerald-400">
@@ -292,45 +373,43 @@ export function DashboardPage() {
                 </div>
                 <div>
                   <h2 className="font-medium text-gray-100">{activeSession.title}</h2>
-                  <p className="text-xs text-gray-500">终端会话</p>
+                  <p className="text-xs text-gray-500">终端会话 · PID: {activeSession.pid ?? '-'}</p>
                 </div>
               </div>
               <button
-                onClick={() => handleCloseSession(activeSession.id)}
+                onClick={() => void handleCloseSession(activeSession.id)}
                 className="p-2 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-900/30 transition-colors"
                 title="关闭会话"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </header>
 
-            {/* 会话内容统一使用 TerminalView */}
-            <div className="flex-1 overflow-hidden">
-              <TerminalView
-                sessionId={activeSession.id}
-                onInput={handleTerminalInput}
-                onResize={handleTerminalResize}
-                disabled={activeSession.status !== 'running'}
-                className="h-full"
+            <div className="flex-1 overflow-hidden flex flex-col">
+              <div className="flex-1 overflow-hidden">
+                <TerminalView
+                  sessionId={activeSession.id}
+                  onInput={(data) => void handleTerminalInput(data)}
+                  onResize={(cols, rows) => void handleTerminalResize(cols, rows)}
+                  onFocusChange={setTerminalFocused}
+                  disabled={activeSession.status !== 'running'}
+                  className="h-full"
+                />
+              </div>
+
+              <TerminalShortcutBar
+                visible={showShortcutBar}
+                shortcuts={preferences?.shortcuts ?? []}
+                commonChars={preferences?.commonChars ?? []}
+                onSend={(value) => void handleTerminalInput(value)}
               />
             </div>
           </>
         ) : (
-          // 无活跃会话时的占位内容
           <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
-            <svg
-              className="w-20 h-20 mb-6 opacity-30"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="w-20 h-20 mb-6 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -343,24 +422,15 @@ export function DashboardPage() {
             </h3>
             <p className="text-sm text-gray-500 mb-6">
               {sessions.length === 0
-                ? '创建一个新的终端会话（可直接运行 CLI 工具）'
+                ? '创建一个新的终端会话（支持自动运行默认命令）'
                 : '从左侧列表选择一个会话，或创建新会话'}
             </p>
             <button
               onClick={() => setIsNewSessionDialogOpen(true)}
-              className="
-                inline-flex items-center gap-2 px-6 py-3
-                bg-purple-600 hover:bg-purple-500 text-white rounded-lg
-                font-medium transition-colors
-              "
+              className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 4v16m8-8H4"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               新建会话
             </button>
@@ -368,12 +438,44 @@ export function DashboardPage() {
         )}
       </main>
 
-      {/* 新建会话对话框 */}
       <NewSessionDialog
         isOpen={isNewSessionDialogOpen}
         onClose={() => setIsNewSessionDialogOpen(false)}
-        onCreate={handleCreateSession}
+        onCreate={(options) => void handleCreateSession(options)}
       />
     </div>
   );
+}
+
+function buildDefaultSessionOptions(profile: DaemonProfile | null): SessionOptions | undefined {
+  if (!profile) {
+    return undefined;
+  }
+
+  const options: SessionOptions = {};
+  if (profile.defaultCwd) {
+    options.cwd = profile.defaultCwd;
+  }
+
+  const startupCommand = resolveStartupCommand(profile);
+  if (startupCommand) {
+    options.startupCommand = startupCommand;
+  }
+
+  return Object.keys(options).length > 0 ? options : undefined;
+}
+
+function resolveStartupCommand(profile: DaemonProfile): string | null {
+  switch (profile.defaultCommandMode) {
+    case 'zsh':
+      return 'zsh';
+    case 'bash':
+      return 'bash';
+    case 'tmux':
+      return 'tmux';
+    case 'custom':
+      return profile.defaultCommandValue?.trim() || null;
+    default:
+      return null;
+  }
 }

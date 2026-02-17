@@ -261,18 +261,9 @@ program
     // 动态导入服务器启动逻辑
     const { serve } = await import('@hono/node-server');
     const { WebSocketServer } = await import('ws');
-    const { createServer } = await import('./server.js');
-    const { DeviceRegistry } = await import('./device-registry.js');
-    const { MessageRouter } = await import('./message-router.js');
-    const { WebSocketHandler } = await import('./websocket-handler.js');
-
-    // 初始化核心组件
-    const deviceRegistry = new DeviceRegistry();
-    const messageRouter = new MessageRouter(deviceRegistry);
-    const wsHandler = new WebSocketHandler(deviceRegistry, messageRouter);
-
-    // 创建 Hono 应用
-    const app = createServer({ deviceRegistry });
+    const { initializeRelayRuntime } = await import('./runtime.js');
+    const runtime = initializeRelayRuntime();
+    const { app, deviceRegistry, wsHandler } = runtime;
 
     const protocol = useTls ? 's' : '';
     console.log(`[Relay] OpenTermux Relay Server 启动中，地址: ${host}:${port}${useTls ? ' (TLS)' : ''}...`);
@@ -304,8 +295,8 @@ program
     });
 
     // 处理 WebSocket 连接
-    wss.on('connection', (ws) => {
-      wsHandler.handleConnection(ws);
+    wss.on('connection', (ws, request) => {
+      wsHandler.handleConnection(ws, request.url);
     });
 
     wss.on('error', (error) => {

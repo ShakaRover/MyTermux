@@ -22,6 +22,8 @@ export interface TerminalViewProps {
   disabled?: boolean;
   /** 额外的 CSS 类名 */
   className?: string;
+  /** 终端焦点变化 */
+  onFocusChange?: (focused: boolean) => void;
 }
 
 /**
@@ -33,6 +35,7 @@ export function TerminalView({
   onResize,
   disabled = false,
   className = '',
+  onFocusChange,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -42,11 +45,13 @@ export function TerminalView({
   // 使用 ref 存储回调，避免作为 useEffect 依赖项导致重新创建终端
   const onInputRef = useRef(onInput);
   const onResizeRef = useRef(onResize);
+  const onFocusChangeRef = useRef(onFocusChange);
   const disabledRef = useRef(disabled);
 
   // 更新 ref 值
   onInputRef.current = onInput;
   onResizeRef.current = onResize;
+  onFocusChangeRef.current = onFocusChange;
   disabledRef.current = disabled;
 
   // 获取终端缓冲区
@@ -99,6 +104,16 @@ export function TerminalView({
     terminal.open(containerRef.current);
     fitAddon.fit();
 
+    const containerEl = containerRef.current;
+    const handleFocusIn = () => {
+      onFocusChangeRef.current?.(true);
+    };
+    const handleFocusOut = () => {
+      onFocusChangeRef.current?.(false);
+    };
+    containerEl.addEventListener('focusin', handleFocusIn);
+    containerEl.addEventListener('focusout', handleFocusOut);
+
     // 保存引用
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -116,10 +131,13 @@ export function TerminalView({
     }
 
     return () => {
+      containerEl.removeEventListener('focusin', handleFocusIn);
+      containerEl.removeEventListener('focusout', handleFocusOut);
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
       lastBufferLengthRef.current = 0;
+      onFocusChangeRef.current?.(false);
     };
   }, [sessionId]); // 只依赖 sessionId
 

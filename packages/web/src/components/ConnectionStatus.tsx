@@ -22,11 +22,6 @@ const stateConfig: Record<
     bgColor: 'bg-yellow-500',
     pulse: true,
   },
-  connected: {
-    label: '已连接中继',
-    color: 'text-blue-400',
-    bgColor: 'bg-blue-500',
-  },
   authenticating: {
     label: '认证中...',
     color: 'text-yellow-400',

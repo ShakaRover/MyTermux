@@ -1,31 +1,19 @@
 /**
  * @opentermux/relay 中继服务器入口
- *
- * 功能：
- * - 启动 HTTP 服务器（Hono + @hono/node-server）
- * - 集成 WebSocket 服务器（ws 库）
- * - 初始化设备注册管理和消息路由
  */
 
 import { serve } from '@hono/node-server';
 import { WebSocketServer } from 'ws';
-import type { Server as HttpServer } from 'node:http';
-import { createServer } from './server.js';
-import { DeviceRegistry } from './device-registry.js';
-import { MessageRouter } from './message-router.js';
-import { WebSocketHandler } from './websocket-handler.js';
+import type { Server as HttpServer, IncomingMessage } from 'node:http';
+import { initializeRelayRuntime } from './runtime.js';
 
 // 从环境变量获取端口和地址
 const port = Number(process.env['PORT']) || 3000;
 const hostname = process.env['HOST'] || '0.0.0.0';
 
 // 初始化核心组件
-const deviceRegistry = new DeviceRegistry();
-const messageRouter = new MessageRouter(deviceRegistry);
-const wsHandler = new WebSocketHandler(deviceRegistry, messageRouter);
-
-// 创建 Hono 应用
-const app = createServer({ deviceRegistry });
+const runtime = initializeRelayRuntime();
+const { app, deviceRegistry, wsHandler } = runtime;
 
 console.log(`[Relay] OpenTermux Relay Server 启动中，地址: ${hostname}:${port}...`);
 
@@ -37,15 +25,14 @@ const httpServer = serve({
 });
 
 // 创建 WebSocket 服务器，附加到 HTTP 服务器
-// 使用类型断言处理 @hono/node-server 返回的服务器类型
 const wss = new WebSocketServer({
   server: httpServer as unknown as HttpServer,
   path: '/ws',
 });
 
 // 处理 WebSocket 连接
-wss.on('connection', (ws) => {
-  wsHandler.handleConnection(ws);
+wss.on('connection', (ws, request: IncomingMessage) => {
+  wsHandler.handleConnection(ws, request.url);
 });
 
 // 处理 WebSocket 服务器错误
@@ -53,7 +40,7 @@ wss.on('error', (error) => {
   console.error('[Relay] WebSocket 服务器错误:', error);
 });
 
-console.log(`[Relay] OpenTermux Relay Server 已启动`);
+console.log('[Relay] OpenTermux Relay Server 已启动');
 console.log(`[Relay] HTTP: http://${hostname}:${port}`);
 console.log(`[Relay] WebSocket: ws://${hostname}:${port}/ws`);
 console.log(`[Relay] 健康检查: http://${hostname}:${port}/health`);
@@ -93,4 +80,5 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // 导出供测试使用
+const messageRouter = runtime.messageRouter;
 export { app, wss, deviceRegistry, messageRouter, wsHandler };

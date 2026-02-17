@@ -84,8 +84,10 @@ function SessionListItem({
           </span>
         </div>
         <div className="text-xs text-gray-500 truncate">
-          终端会话 ·
-          {' '}
+          终端会话
+          {' · '}
+          PID: {session.pid ?? '-'}
+          {' · '}
           {new Date(session.createdAt).toLocaleTimeString('zh-CN', {
             hour: '2-digit',
             minute: '2-digit',

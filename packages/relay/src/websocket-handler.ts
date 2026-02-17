@@ -12,6 +12,7 @@ import type { TransportMessage, DeviceType } from '@opentermux/shared';
 import { isTransportMessage, createTransportMessage } from '@opentermux/shared';
 import type { DeviceRegistry } from './device-registry';
 import type { MessageRouter } from './message-router';
+import type { WsTicketPayload, WsTicketService } from './auth/ws-ticket.js';
 
 /** 注册消息载荷 */
 interface RegisterPayload {
@@ -26,7 +27,14 @@ interface TokenAuthPayload {
   deviceType: DeviceType;
   publicKey: string;
   /** Access Token（用于客户端认证连接 daemon） */
-  accessToken: string;
+  accessToken?: string;
+}
+
+/** WebSocket 连接上下文 */
+interface ConnectionContext {
+  ticket: string | null;
+  clientTicketValidated: boolean;
+  ticketPayload: WsTicketPayload | null;
 }
 
 /**
@@ -35,13 +43,17 @@ interface TokenAuthPayload {
 export class WebSocketHandler {
   private deviceRegistry: DeviceRegistry;
   private messageRouter: MessageRouter;
+  private wsTicketService: WsTicketService;
 
   /** WebSocket → deviceId 反向映射（用于连接关闭时查找） */
   private wsToDeviceId: Map<WebSocket, string> = new Map();
+  /** WebSocket 连接上下文（ticket / 校验状态） */
+  private wsContexts: Map<WebSocket, ConnectionContext> = new Map();
 
-  constructor(deviceRegistry: DeviceRegistry, messageRouter: MessageRouter) {
+  constructor(deviceRegistry: DeviceRegistry, messageRouter: MessageRouter, wsTicketService: WsTicketService) {
     this.deviceRegistry = deviceRegistry;
     this.messageRouter = messageRouter;
+    this.wsTicketService = wsTicketService;
   }
 
   /**
@@ -49,8 +61,14 @@ export class WebSocketHandler {
    *
    * @param ws WebSocket 连接
    */
-  handleConnection(ws: WebSocket): void {
+  handleConnection(ws: WebSocket, requestUrl?: string): void {
     console.log('[WebSocketHandler] 新连接建立');
+    const ticket = this.extractTicketFromRequestUrl(requestUrl);
+    this.wsContexts.set(ws, {
+      ticket,
+      clientTicketValidated: false,
+      ticketPayload: null,
+    });
 
     // 设置消息处理
     ws.on('message', (data: RawData) => {
@@ -135,6 +153,11 @@ export class WebSocketHandler {
       return;
     }
 
+    // Web client 必须通过 ws-ticket 准入
+    if (payload.deviceType === 'client' && !this.ensureClientTicket(ws)) {
+      return;
+    }
+
     const deviceId = message.from;
 
     // 检查是否已有连接使用相同 WebSocket
@@ -190,6 +213,11 @@ export class WebSocketHandler {
       return;
     }
 
+    // client token_auth 必须通过 ws-ticket 准入
+    if (!this.ensureClientTicket(ws)) {
+      return;
+    }
+
     const clientId = message.from;
 
     // 检查是否已有连接使用相同 WebSocket
@@ -207,7 +235,18 @@ export class WebSocketHandler {
     this.wsToDeviceId.set(ws, clientId);
 
     // 使用 Access Token 验证并建立认证关系
-    const daemonId = this.deviceRegistry.validateAccessToken(payload.accessToken, clientId);
+    const context = this.wsContexts.get(ws);
+    const accessToken = payload.accessToken ?? context?.ticketPayload?.accessToken;
+
+    if (!accessToken) {
+      this.sendError(ws, 'TOKEN_REQUIRED', '缺少 Access Token');
+      this.deviceRegistry.unregisterDevice(clientId);
+      this.wsToDeviceId.delete(ws);
+      ws.close(4002, '缺少 Access Token');
+      return;
+    }
+
+    const daemonId = this.deviceRegistry.validateAccessToken(accessToken, clientId);
 
     if (daemonId) {
       // 获取 daemon 的公钥
@@ -321,8 +360,10 @@ export class WebSocketHandler {
       }
 
       this.wsToDeviceId.delete(ws);
+      this.wsContexts.delete(ws);
     } else {
       console.log(`[WebSocketHandler] 未注册连接关闭 (code: ${code})`);
+      this.wsContexts.delete(ws);
     }
   }
 
@@ -335,6 +376,7 @@ export class WebSocketHandler {
   private handleError(ws: WebSocket, error: Error): void {
     const deviceId = this.wsToDeviceId.get(ws) ?? 'unknown';
     console.error(`[WebSocketHandler] 连接错误: ${deviceId}`, error.message);
+    this.wsContexts.delete(ws);
   }
 
   /**
@@ -352,6 +394,55 @@ export class WebSocketHandler {
       console.log(`[WebSocketHandler] 清理旧连接映射: ${deviceId}`);
       this.wsToDeviceId.delete(currentWs);
       currentWs.close(4000, '被新连接替换');
+    }
+  }
+
+  /**
+   * 校验 client ws-ticket
+   */
+  private ensureClientTicket(ws: WebSocket): boolean {
+    const context = this.wsContexts.get(ws);
+    if (!context) {
+      this.sendError(ws, 'WS_CONTEXT_NOT_FOUND', '连接上下文不存在');
+      ws.close(4003, '连接上下文不存在');
+      return false;
+    }
+
+    if (context.clientTicketValidated) {
+      return true;
+    }
+
+    if (!context.ticket) {
+      this.sendError(ws, 'WS_TICKET_REQUIRED', '缺少 ws ticket');
+      ws.close(4003, '缺少 ws ticket');
+      return false;
+    }
+
+    const consumed = this.wsTicketService.consume(context.ticket);
+    if (!consumed) {
+      this.sendError(ws, 'WS_TICKET_INVALID', 'ws ticket 无效或已过期');
+      ws.close(4003, 'ws ticket 无效或已过期');
+      return false;
+    }
+
+    context.clientTicketValidated = true;
+    context.ticketPayload = consumed;
+    return true;
+  }
+
+  /**
+   * 从升级 URL 中提取 ws ticket
+   */
+  private extractTicketFromRequestUrl(requestUrl?: string): string | null {
+    if (!requestUrl) {
+      return null;
+    }
+
+    try {
+      const parsed = new URL(requestUrl, 'http://relay.local');
+      return parsed.searchParams.get('ticket');
+    } catch {
+      return null;
     }
   }
 

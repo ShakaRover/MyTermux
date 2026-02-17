@@ -1,26 +1,218 @@
 # OpenTermux API 文档
 
-本文档描述 OpenTermux 当前实现的通信协议与服务接口。
+版本：`1.0.0`
 
-- 产品：OpenTermux
-- 定位：Web 远程终端
-- 版本：1.0.0
+OpenTermux 协议分为两层：
 
-## 总览
+1. 传输层（Relay 可见）：设备注册、token 认证、路由
+2. 应用层（E2E 加密）：终端会话管理与交互
 
-OpenTermux 协议分两层：
+另外，Relay 提供 Web 管理 API（登录、daemon profile、偏好配置、ws-ticket）。
 
-1. 传输层（Relay 可见）
-2. 应用层（E2E 加密，Relay 不解密）
+## 1. Web 认证与安全
 
-## 传输层协议（WebSocket）
+### 1.1 Cookie 与 CSRF
 
-### 连接地址
+- 会话 Cookie：`opentermux_web_session`（`HttpOnly`, `SameSite=Strict`）
+- CSRF Cookie：`opentermux_csrf_token`
+- 写操作（POST/PATCH/PUT）需要 `X-CSRF-Token` 请求头
 
-- Relay WebSocket：`ws://<host>:<port>/ws`
-- TLS：`wss://<host>:<port>/ws`
+### 1.2 暴力破解防护
 
-### 通用结构
+- IP 维度：10 分钟最多 30 次尝试
+- 账号+IP 维度：
+  - 第 5 次失败后锁定 5 分钟
+  - 继续失败按 2 倍退避，最长 60 分钟
+- 成功登录后清零计数
+
+## 2. Relay HTTP API
+
+### 2.1 认证接口
+
+#### `POST /api/web-auth/login`
+
+请求：
+
+```json
+{
+  "username": "admin",
+  "password": "******"
+}
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "username": "admin",
+  "expiresAt": 1730000000000
+}
+```
+
+#### `POST /api/web-auth/logout`
+
+- 需要登录 + CSRF
+
+响应：
+
+```json
+{ "success": true }
+```
+
+#### `GET /api/web-auth/me`
+
+响应：
+
+```json
+{
+  "authenticated": true,
+  "username": "admin",
+  "expiresAt": 1730000000000
+}
+```
+
+#### `GET /api/web-auth/csrf`
+
+响应：
+
+```json
+{
+  "csrfToken": "..."
+}
+```
+
+### 2.2 ws-ticket
+
+#### `POST /api/ws-ticket`
+
+- 需要登录 + CSRF
+- 请求体必须带 `profileId`
+
+请求：
+
+```json
+{
+  "profileId": "profile-uuid"
+}
+```
+
+响应：
+
+```json
+{
+  "ticket": "base64url-token",
+  "expiresAt": 1730000000000,
+  "profileId": "profile-uuid",
+  "daemonId": "daemon-123"
+}
+```
+
+说明：
+
+- ticket 一次性消费
+- 有效期 60 秒
+- client 连接 `/ws` 时必须携带 `?ticket=...`
+
+### 2.3 Daemon 管理
+
+#### `GET /api/daemons`
+
+响应：
+
+```json
+{
+  "onlineDaemons": [
+    {
+      "daemonId": "daemon-1",
+      "connectedAt": 1730000000000,
+      "lastHeartbeat": 1730000002000,
+      "connectedClients": 2
+    }
+  ],
+  "profiles": [
+    {
+      "id": "profile-1",
+      "name": "MacBook",
+      "daemonId": "daemon-1",
+      "accessTokenMasked": "opentermux-abcd...1234",
+      "hasToken": true,
+      "defaultCwd": "/Users/me",
+      "defaultCommandMode": "tmux",
+      "defaultCommandValue": null,
+      "online": true,
+      "lastHeartbeat": 1730000002000,
+      "connectedClients": 2,
+      "createdAt": 1730000000000,
+      "updatedAt": 1730000001000
+    }
+  ]
+}
+```
+
+#### `POST /api/daemon-profiles`
+
+请求：
+
+```json
+{
+  "name": "MacBook",
+  "accessToken": "opentermux-...",
+  "daemonId": null,
+  "defaultCwd": "/Users/me/project",
+  "defaultCommandMode": "zsh",
+  "defaultCommandValue": null
+}
+```
+
+#### `PATCH /api/daemon-profiles/:id`
+
+- 与创建字段一致，按需传递
+
+#### `POST /api/daemon-profiles/:id/bind`
+
+请求：
+
+```json
+{
+  "daemonId": "daemon-1"
+}
+```
+
+### 2.4 Web 偏好配置
+
+#### `GET /api/web-preferences`
+
+响应：
+
+```json
+{
+  "shortcuts": [
+    { "id": "ctrl-c", "label": "Ctrl+C", "value": "\u0003" }
+  ],
+  "commonChars": ["/", "~", "|"],
+  "updatedAt": 1730000000000
+}
+```
+
+#### `PUT /api/web-preferences`
+
+请求：
+
+```json
+{
+  "shortcuts": [
+    { "id": "ctrl-c", "label": "Ctrl+C", "value": "\u0003" }
+  ],
+  "commonChars": ["/", "~", "|"]
+}
+```
+
+## 3. 传输层协议（WebSocket）
+
+连接地址：`ws://<host>:<port>/ws`（TLS 为 `wss://`）
+
+### 3.1 通用结构
 
 ```ts
 interface TransportMessage {
@@ -32,99 +224,40 @@ interface TransportMessage {
 }
 ```
 
-### `register`
+### 3.2 `register`
 
-设备注册。
+- daemon 注册时可带 Access Token
+- client 注册路径要求已通过 ws-ticket 准入
 
-```json
-{
-  "type": "register",
-  "from": "daemon-1",
-  "payload": "{\"deviceType\":\"daemon\",\"publicKey\":\"...\",\"accessToken\":\"opentermux-...\"}",
-  "timestamp": 1730000000000
-}
-```
+### 3.3 `token_auth`
 
-- `daemon` 注册时可带 `accessToken`
-- `client` 注册时不需要 `accessToken`
+- client 发起 daemon 认证
+- token 可由 payload 传递，或由 ws-ticket 绑定的 profile token 注入
 
-### `token_auth`
+### 3.4 `token_ack`
 
-客户端使用 Access Token 请求认证。
+成功示例（client）：
 
 ```json
 {
-  "type": "token_auth",
-  "from": "client-1",
-  "payload": "{\"deviceType\":\"client\",\"publicKey\":\"...\",\"accessToken\":\"opentermux-...\"}",
-  "timestamp": 1730000000000
+  "success": true,
+  "daemonId": "daemon-1",
+  "publicKey": "..."
 }
 ```
 
-### `token_ack`
-
-认证结果回执。
-
-成功（发给 client）：
+失败示例（client）：
 
 ```json
 {
-  "type": "token_ack",
-  "from": "relay",
-  "to": "client-1",
-  "payload": "{\"success\":true,\"daemonId\":\"daemon-1\",\"publicKey\":\"...\"}",
-  "timestamp": 1730000000000
+  "success": false,
+  "error": "Access Token 无效或 Daemon 未连接"
 }
 ```
 
-成功（通知 daemon）：
+## 4. 应用层协议（E2E 加密）
 
-```json
-{
-  "type": "token_ack",
-  "from": "relay",
-  "to": "daemon-1",
-  "payload": "{\"success\":true,\"clientId\":\"client-1\",\"publicKey\":\"...\"}",
-  "timestamp": 1730000000000
-}
-```
-
-失败（发给 client）：
-
-```json
-{
-  "type": "token_ack",
-  "from": "relay",
-  "to": "client-1",
-  "payload": "{\"success\":false,\"error\":\"Access Token 无效或 Daemon 未连接\"}",
-  "timestamp": 1730000000000
-}
-```
-
-### `message`
-
-应用层加密消息传输载体。`payload` 为加密串。
-
-### `heartbeat`
-
-心跳保活消息。
-
-### `error`
-
-传输层错误消息。
-
-```json
-{
-  "type": "error",
-  "from": "relay",
-  "payload": "{\"code\":\"ROUTE_FAILED\",\"message\":\"接收者设备未连接\"}",
-  "timestamp": 1730000000000
-}
-```
-
-## 应用层协议（E2E 加密）
-
-### 通用结构
+### 4.1 通用结构
 
 ```ts
 interface AppMessage {
@@ -143,104 +276,33 @@ interface AppMessage {
 }
 ```
 
-### 会话模型
+### 4.2 会话模型
 
 ```ts
 type SessionType = 'terminal';
 
+interface SessionInfo {
+  id: string;
+  type: 'terminal';
+  status: 'starting' | 'running' | 'stopped' | 'error';
+  pid?: number;
+  createdAt: number;
+  title: string;
+  outputHistory?: string;
+}
+
 interface SessionOptions {
   cwd?: string;
   shell?: string;
+  startupCommand?: string;
   cols?: number;
   rows?: number;
 }
 ```
 
-### `session:create`
+`startupCommand` 用于会话创建后自动执行默认命令（如 `zsh`、`tmux` 或自定义命令）。
 
-```json
-{
-  "action": "session:create",
-  "messageId": "1730000000-abc123",
-  "sessionType": "terminal",
-  "options": {
-    "cwd": "/home/user/project"
-  }
-}
-```
-
-### `session:created`
-
-```json
-{
-  "action": "session:created",
-  "messageId": "1730000000-def456",
-  "session": {
-    "id": "session-1",
-    "type": "terminal",
-    "status": "running",
-    "createdAt": 1730000000000,
-    "title": "bash: /home/user/project"
-  }
-}
-```
-
-### `session:list` / `session:list_response`
-
-`session:list_response` 会返回 `sessions`，并可附带 `outputHistory` 供重连回放。
-
-### `session:input`
-
-```json
-{
-  "action": "session:input",
-  "messageId": "1730000000-ghi789",
-  "sessionId": "session-1",
-  "data": "ls -la\n"
-}
-```
-
-### `session:output`
-
-```json
-{
-  "action": "session:output",
-  "messageId": "1730000000-jkl012",
-  "sessionId": "session-1",
-  "data": "total 8\r\n"
-}
-```
-
-### `session:resize`
-
-```json
-{
-  "action": "session:resize",
-  "messageId": "1730000000-mno345",
-  "sessionId": "session-1",
-  "cols": 120,
-  "rows": 32
-}
-```
-
-### `session:close` / `session:closed`
-
-用于主动关闭和关闭通知。
-
-### `error`
-
-应用层错误。
-
-```json
-{
-  "action": "error",
-  "messageId": "1730000000-pqr678",
-  "code": "SESSION_CREATE_FAILED",
-  "message": "工作目录不存在"
-}
-```
-
-## Relay HTTP 接口
+## 5. 健康检查
 
 ### `GET /health`
 
@@ -256,35 +318,3 @@ interface SessionOptions {
   }
 }
 ```
-
-### `GET /`
-
-```json
-{
-  "name": "OpenTermux Relay Server",
-  "version": "1.0.0",
-  "endpoints": {
-    "/health": "GET - 健康检查",
-    "/ws": "WebSocket - 设备连接端点"
-  }
-}
-```
-
-### `GET /ws`
-
-非升级请求返回 `426`。
-
-## 错误码（常见）
-
-- `INVALID_JSON`
-- `INVALID_MESSAGE`
-- `INVALID_PAYLOAD`
-- `INVALID_DEVICE_TYPE`
-- `ROUTE_FAILED`
-- `PEER_DISCONNECTED`
-
-## 安全说明
-
-- Access Token 格式：`opentermux-<32hex>`
-- 客户端与 daemon 认证后使用 ECDH 派生共享密钥
-- 应用层数据以 AES-GCM 加密后通过 Relay 转发
