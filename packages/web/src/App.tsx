@@ -69,7 +69,7 @@ function App() {
         />
 
         <Route
-          path="/dashboard"
+          path="/sessions"
           element={(
             <ProtectedRoute>
               <DashboardPage />

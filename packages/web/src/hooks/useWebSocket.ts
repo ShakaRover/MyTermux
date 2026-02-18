@@ -150,8 +150,13 @@ export function useWebSocket(): UseWebSocketReturn {
       throw new Error('该 daemon 配置未设置 Access Token');
     }
 
-    // 单活 daemon 模式：切换前关闭旧连接并清空会话
-    disconnect();
+    const current = useConnectionStore.getState();
+    const shouldResetConnection = Boolean(current.ws) || current.activeProfile?.id !== profile.id;
+
+    // 单活 daemon 模式：仅在切换 profile 或存在旧连接时重置连接与会话
+    if (shouldResetConnection) {
+      disconnect();
+    }
 
     const store = useConnectionStore.getState();
     store.setState('connecting');
@@ -207,7 +212,6 @@ export function useWebSocket(): UseWebSocketReturn {
         current.setSharedKey(null);
         current.setKeyPair(null);
         current.setDeviceId(null);
-        useSessionsStore.getState().clearSessions();
       };
 
       store.setWs(socket);

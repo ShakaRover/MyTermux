@@ -39,7 +39,7 @@ pnpm --filter @mytermux/web dev
 2. 使用管理员账号登录
 3. 在 `/daemons` 新建 profile（含 token）
 4. 绑定在线 daemon
-5. 点击“连接”进入 `/dashboard`
+5. 点击“连接”进入 `/sessions`
 
 ### 2.3 终端会话
 
@@ -51,7 +51,7 @@ pnpm --filter @mytermux/web dev
 
 ### 2.4 移动端快捷栏
 
-1. 在触屏设备打开 `/dashboard`
+1. 在触屏设备打开 `/sessions`
 2. 聚焦终端并弹出软键盘
 3. 验证快捷栏出现
 4. 点击快捷键后终端收到输入

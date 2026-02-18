@@ -173,7 +173,7 @@ export function DaemonHubPage() {
 
     try {
       await connectWithProfile(profile);
-      navigate('/dashboard');
+      navigate('/sessions');
     } catch (connectError) {
       setError(connectError instanceof Error ? connectError.message : '连接 daemon 失败');
     } finally {
@@ -222,7 +222,7 @@ export function DaemonHubPage() {
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={() => navigate('/dashboard')}
+                onClick={() => navigate('/sessions')}
                 className="rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-200 hover:border-emerald-500"
               >
                 前往会话

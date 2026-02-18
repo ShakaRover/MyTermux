@@ -64,7 +64,7 @@ pnpm --filter @mytermux/web dev
 
 1. 新建 profile（名称、token、默认目录、默认命令）
 2. 将 profile 绑定到在线 daemon（可选）
-3. 点击“连接”进入 `/dashboard`
+3. 点击“连接”进入 `/sessions`
 
 默认命令支持：
 
@@ -75,7 +75,7 @@ pnpm --filter @mytermux/web dev
 
 ## 5. Dashboard 会话操作
 
-在 `/dashboard`：
+在 `/sessions`：
 
 1. 创建会话（可选覆盖工作目录与启动命令）
 2. 左侧会话列表可查看 `PID`

@@ -23,7 +23,7 @@ packages/
   shared/   协议与类型（SessionInfo.pid / startupCommand 等）
   relay/    API + WS + SQLite（web_sessions/login_attempts/daemon_profiles/web_preferences）
   daemon/   终端会话与 token 管理
-  web/      /login /daemons /dashboard 页面与状态管理
+  web/      /login /daemons /sessions 页面与状态管理
 ```
 
 ## 4. 本地开发
