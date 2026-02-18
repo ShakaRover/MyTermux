@@ -1,4 +1,4 @@
-import type { DaemonProfile, SessionOptions } from '@opentermux/shared';
+import type { DaemonProfile, SessionOptions } from '@mytermux/shared';
 
 export function buildDefaultSessionOptions(profile: DaemonProfile | null): SessionOptions | undefined {
   if (!profile) {

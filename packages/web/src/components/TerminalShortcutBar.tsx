@@ -1,4 +1,4 @@
-import type { WebShortcut } from '@opentermux/shared';
+import type { WebShortcut } from '@mytermux/shared';
 
 export interface TerminalShortcutBarProps {
   visible: boolean;

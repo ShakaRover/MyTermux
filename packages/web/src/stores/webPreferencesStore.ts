@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { WebPreferences, WebShortcut } from '@opentermux/shared';
+import type { WebPreferences, WebShortcut } from '@mytermux/shared';
 import { fetchWebPreferences, updateWebPreferences } from '../api';
 
 export interface WebPreferencesState {

@@ -135,10 +135,10 @@ describe('Crypto Module', () => {
   });
 
   describe('generateAccessToken', () => {
-    it('should generate a token with opentermux- prefix and 32 hex chars', () => {
+    it('should generate a token with mytermux- prefix and 32 hex chars', () => {
       const token = generateAccessToken();
 
-      expect(token).toMatch(/^opentermux-[0-9a-f]{32}$/);
+      expect(token).toMatch(/^mytermux-[0-9a-f]{32}$/);
     });
 
     it('should generate unique tokens each time', () => {

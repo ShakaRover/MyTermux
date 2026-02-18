@@ -1,6 +1,6 @@
-# OpenTermux
+# MyTermux
 
-OpenTermux 是面向终端场景的 **Web 远程终端**：
+MyTermux 是面向终端场景的 **Web 远程终端**：
 
 - daemon 运行在目标主机，负责创建终端会话
 - relay 负责设备中继、Web 登录认证与 daemon 管理 API
@@ -35,19 +35,19 @@ pnpm turbo run build
 1. 启动 relay（建议先配置管理员环境变量）
 
 ```bash
-pnpm --filter @opentermux/relay start:fg
+pnpm --filter @mytermux/relay start:fg
 ```
 
 2. 启动 daemon
 
 ```bash
-pnpm --filter @opentermux/daemon start:fg
+pnpm --filter @mytermux/daemon start:fg
 ```
 
 3. 启动 Web
 
 ```bash
-pnpm --filter @opentermux/web dev
+pnpm --filter @mytermux/web dev
 ```
 
 4. 打开 `http://localhost:5173`
@@ -75,7 +75,7 @@ pnpm turbo run clean
 
 ## 运行时文件
 
-默认目录：`~/.opentermux`
+默认目录：`~/.mytermux`
 
 - daemon: `auth.json`, `daemon.pid`, `daemon.status`
 - relay: `relay.pid`, `relay.log`, `relay.db`

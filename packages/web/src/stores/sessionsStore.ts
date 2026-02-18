@@ -5,7 +5,7 @@
  */
 
 import { create } from 'zustand';
-import type { SessionInfo } from '@opentermux/shared';
+import type { SessionInfo } from '@mytermux/shared';
 
 /** 会话扩展信息 */
 export interface SessionData extends SessionInfo {

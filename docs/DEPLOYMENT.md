@@ -1,6 +1,6 @@
-# OpenTermux 部署文档
+# MyTermux 部署文档
 
-目标：部署可长期运行的 OpenTermux（Relay + Daemon + Web）。
+目标：部署可长期运行的 MyTermux（Relay + Daemon + Web）。
 
 ## 1. 基础要求
 
@@ -23,7 +23,7 @@ pnpm turbo run build
 - `RELAY_ADMIN_USERNAME`：Web 管理员用户名
 - `RELAY_ADMIN_PASSWORD_HASH`：管理员密码哈希（格式 `scrypt$N$r$p$saltB64$hashB64`）
 - `RELAY_WEB_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
-- `RELAY_DB_PATH`：SQLite 文件路径（默认 `~/.opentermux/relay.db`）
+- `RELAY_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/relay.db`）
 
 示例：
 
@@ -31,7 +31,7 @@ pnpm turbo run build
 export RELAY_ADMIN_USERNAME=admin
 export RELAY_ADMIN_PASSWORD_HASH='<scrypt-hash>'
 export RELAY_WEB_MASTER_KEY='<32-byte-random-secret>'
-export RELAY_DB_PATH=/var/lib/opentermux/relay.db
+export RELAY_DB_PATH=/var/lib/mytermux/relay.db
 ```
 
 ## 3.2 生成密码哈希
@@ -45,13 +45,13 @@ node -e "const {randomBytes,scryptSync}=require('node:crypto');const p=process.a
 前台验证：
 
 ```bash
-pnpm --filter @opentermux/relay start:fg -- --host 0.0.0.0 --port 3000
+pnpm --filter @mytermux/relay start:fg -- --host 0.0.0.0 --port 3000
 ```
 
 后台运行：
 
 ```bash
-pnpm --filter @opentermux/relay start
+pnpm --filter @mytermux/relay start
 ```
 
 健康检查：
@@ -65,19 +65,19 @@ curl http://127.0.0.1:3000/health
 在被控主机运行：
 
 ```bash
-pnpm --filter @opentermux/daemon start -- --relay ws://<relay-host>:3000
+pnpm --filter @mytermux/daemon start -- --relay ws://<relay-host>:3000
 ```
 
 查看 token：
 
 ```bash
-pnpm --filter @opentermux/daemon token
+pnpm --filter @mytermux/daemon token
 ```
 
 ## 5. Web 部署
 
 ```bash
-pnpm --filter @opentermux/web build
+pnpm --filter @mytermux/web build
 ```
 
 产物目录：`packages/web/dist`
@@ -89,13 +89,13 @@ pnpm --filter @opentermux/web build
 ```nginx
 server {
   listen 443 ssl;
-  server_name opentermux.example.com;
+  server_name mytermux.example.com;
 
-  ssl_certificate     /etc/letsencrypt/live/opentermux.example.com/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/opentermux.example.com/privkey.pem;
+  ssl_certificate     /etc/letsencrypt/live/mytermux.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/mytermux.example.com/privkey.pem;
 
   location / {
-    root /srv/opentermux/web-dist;
+    root /srv/mytermux/web-dist;
     try_files $uri /index.html;
   }
 
@@ -127,21 +127,21 @@ server {
 
 ```ini
 [Unit]
-Description=OpenTermux Relay
+Description=MyTermux Relay
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/srv/opentermux
-ExecStart=/usr/bin/pnpm --filter @opentermux/relay start:fg -- --host 0.0.0.0 --port 3000
+WorkingDirectory=/srv/mytermux
+ExecStart=/usr/bin/pnpm --filter @mytermux/relay start:fg -- --host 0.0.0.0 --port 3000
 Restart=always
 RestartSec=3
-User=opentermux
+User=mytermux
 Environment=NODE_ENV=production
 Environment=RELAY_ADMIN_USERNAME=admin
 Environment=RELAY_ADMIN_PASSWORD_HASH=<scrypt-hash>
 Environment=RELAY_WEB_MASTER_KEY=<master-key>
-Environment=RELAY_DB_PATH=/var/lib/opentermux/relay.db
+Environment=RELAY_DB_PATH=/var/lib/mytermux/relay.db
 
 [Install]
 WantedBy=multi-user.target
@@ -151,16 +151,16 @@ WantedBy=multi-user.target
 
 ```ini
 [Unit]
-Description=OpenTermux Daemon
+Description=MyTermux Daemon
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/srv/opentermux
-ExecStart=/usr/bin/pnpm --filter @opentermux/daemon start:fg -- --relay wss://opentermux.example.com/ws
+WorkingDirectory=/srv/mytermux
+ExecStart=/usr/bin/pnpm --filter @mytermux/daemon start:fg -- --relay wss://mytermux.example.com/ws
 Restart=always
 RestartSec=3
-User=opentermux
+User=mytermux
 Environment=NODE_ENV=production
 
 [Install]
@@ -178,7 +178,7 @@ WantedBy=multi-user.target
 
 ## 9. 运行时文件
 
-默认目录：`~/.opentermux`
+默认目录：`~/.mytermux`
 
 - `auth.json`
 - `daemon.pid`

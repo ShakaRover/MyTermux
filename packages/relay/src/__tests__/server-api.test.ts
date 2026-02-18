@@ -34,7 +34,7 @@ afterEach(() => {
 });
 
 function createTestContext(): TestContext {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentermux-relay-api-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mytermux-relay-api-'));
   const storage = new RelayStorage(path.join(tmpDir, 'relay.db'), 'test-master-key');
   storage.upsertAdmin('admin', hashPassword('secret-pass'));
 
@@ -120,7 +120,7 @@ describe('Relay API integration', () => {
     expect(loginBody.authenticated).toBe(true);
     expect(loginBody.username).toBe('admin');
     const cookies = extractCookieHeader(loginResponse);
-    expect(cookies.includes('opentermux_web_session=')).toBe(true);
+    expect(cookies.includes('mytermux_web_session=')).toBe(true);
 
     const csrfResponse = await app.request('/api/web-auth/csrf', {
       headers: {
@@ -141,7 +141,7 @@ describe('Relay API integration', () => {
       },
       body: JSON.stringify({
         name: 'macbook',
-        accessToken: 'opentermux-1234567890abcdef1234567890abcdef',
+        accessToken: 'mytermux-1234567890abcdef1234567890abcdef',
         defaultCwd: '/tmp',
         defaultCommandMode: 'tmux',
       }),
@@ -222,13 +222,13 @@ describe('Relay API integration', () => {
       'daemon-online-1',
       'daemon',
       'daemon-public-key',
-      'opentermux-aabbccddeeff00112233445566778899',
+      'mytermux-aabbccddeeff00112233445566778899',
     );
 
     storage.createDaemonProfile('profile-1', {
       name: 'online-daemon-profile',
       daemonId: 'daemon-online-1',
-      accessToken: 'opentermux-aabbccddeeff00112233445566778899',
+      accessToken: 'mytermux-aabbccddeeff00112233445566778899',
       defaultCommandMode: 'zsh',
     });
 

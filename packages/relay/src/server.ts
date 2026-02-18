@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
-import type { DefaultCommandMode, WebShortcut } from '@opentermux/shared';
+import type { DefaultCommandMode, WebShortcut } from '@mytermux/shared';
 import type { DeviceRegistry } from './device-registry.js';
 import type { RelayStorage, DaemonProfileInput, DaemonProfilePatch } from './storage/index.js';
 import { LoginBruteforceGuard } from './auth/bruteforce.js';
@@ -322,7 +322,7 @@ export function createServer(options: ServerOptions = {}) {
   // API 文档/信息
   app.get('/', (c) => {
     return c.json({
-      name: 'OpenTermux Relay Server',
+      name: 'MyTermux Relay Server',
       version: '1.0.0',
       endpoints: {
         '/health': 'GET - 健康检查',

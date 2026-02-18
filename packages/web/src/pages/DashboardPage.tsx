@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { SessionOptions } from '@opentermux/shared';
+import type { SessionOptions } from '@mytermux/shared';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useSessionsStore } from '../stores/sessionsStore';
 import { useSessions } from '../hooks/useSessions';
@@ -230,7 +230,7 @@ export function DashboardPage() {
                 </svg>
               </div>
               <div>
-                <span className="font-semibold text-gray-100 block leading-tight">OpenTermux</span>
+                <span className="font-semibold text-gray-100 block leading-tight">MyTermux</span>
                 <span className="text-[11px] text-gray-500">{activeProfile?.name || daemonId || '未选择 daemon'}</span>
               </div>
             </div>

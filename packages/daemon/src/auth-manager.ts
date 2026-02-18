@@ -9,12 +9,12 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
-import type { KeyPair } from '@opentermux/shared';
+import type { KeyPair } from '@mytermux/shared';
 import {
   generateAccessToken,
   generateKeyPair,
   deriveSharedSecret,
-} from '@opentermux/shared';
+} from '@mytermux/shared';
 
 // ============================================================================
 // 类型定义
@@ -59,7 +59,7 @@ export interface AuthManagerEvents {
 // ============================================================================
 
 /** 配置文件目录 */
-const CONFIG_DIR = path.join(os.homedir(), '.opentermux');
+const CONFIG_DIR = path.join(os.homedir(), '.mytermux');
 
 /** 认证数据文件路径 */
 const AUTH_DATA_FILE = path.join(CONFIG_DIR, 'auth.json');
@@ -85,7 +85,7 @@ export async function readAccessToken(): Promise<{ token: string; migrated: bool
 
   // 兼容旧版：补充 accessToken
   if (!data.accessToken) {
-    const { generateAccessToken } = await import('@opentermux/shared');
+    const { generateAccessToken } = await import('@mytermux/shared');
     data.accessToken = generateAccessToken();
     migrated = true;
   }

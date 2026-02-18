@@ -11,7 +11,7 @@ describe('LoginBruteforceGuard', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opentermux-relay-test-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mytermux-relay-test-'));
     const dbPath = path.join(tempDir, 'relay.db');
     storage = new RelayStorage(dbPath, 'test-master-key');
     guard = new LoginBruteforceGuard(storage);

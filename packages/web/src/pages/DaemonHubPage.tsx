@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { DaemonProfile, DefaultCommandMode, WebShortcut } from '@opentermux/shared';
+import type { DaemonProfile, DefaultCommandMode, WebShortcut } from '@mytermux/shared';
 import {
   bindDaemonProfile,
   createDaemonProfile,
@@ -353,7 +353,7 @@ export function DaemonHubPage() {
                   type="text"
                   value={form.accessToken}
                   onChange={(event) => setForm((prev) => ({ ...prev, accessToken: event.target.value }))}
-                  placeholder={editingProfileId ? '留空则不修改 Token' : 'opentermux-...'}
+                  placeholder={editingProfileId ? '留空则不修改 Token' : 'mytermux-...'}
                   className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-mono text-gray-100"
                 />
 

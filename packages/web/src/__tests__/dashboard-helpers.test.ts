@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DaemonProfile } from '@opentermux/shared';
+import type { DaemonProfile } from '@mytermux/shared';
 import { buildDefaultSessionOptions, resolveStartupCommand } from '../utils/sessionDefaults';
 
 function createProfile(overrides: Partial<DaemonProfile> = {}): DaemonProfile {

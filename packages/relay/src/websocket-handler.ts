@@ -8,8 +8,8 @@
  */
 
 import type { WebSocket, RawData } from 'ws';
-import type { TransportMessage, DeviceType } from '@opentermux/shared';
-import { isTransportMessage, createTransportMessage } from '@opentermux/shared';
+import type { TransportMessage, DeviceType } from '@mytermux/shared';
+import { isTransportMessage, createTransportMessage } from '@mytermux/shared';
 import type { DeviceRegistry } from './device-registry';
 import type { MessageRouter } from './message-router';
 import type { WsTicketPayload, WsTicketService } from './auth/ws-ticket.js';

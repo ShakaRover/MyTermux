@@ -1,5 +1,5 @@
 /**
- * @opentermux/relay 中继服务器入口
+ * @mytermux/relay 中继服务器入口
  */
 
 import { serve } from '@hono/node-server';
@@ -15,7 +15,7 @@ const hostname = process.env['HOST'] || '0.0.0.0';
 const runtime = initializeRelayRuntime();
 const { app, deviceRegistry, wsHandler } = runtime;
 
-console.log(`[Relay] OpenTermux Relay Server 启动中，地址: ${hostname}:${port}...`);
+console.log(`[Relay] MyTermux Relay Server 启动中，地址: ${hostname}:${port}...`);
 
 // 启动 HTTP 服务器
 const httpServer = serve({
@@ -40,7 +40,7 @@ wss.on('error', (error) => {
   console.error('[Relay] WebSocket 服务器错误:', error);
 });
 
-console.log('[Relay] OpenTermux Relay Server 已启动');
+console.log('[Relay] MyTermux Relay Server 已启动');
 console.log(`[Relay] HTTP: http://${hostname}:${port}`);
 console.log(`[Relay] WebSocket: ws://${hostname}:${port}/ws`);
 console.log(`[Relay] 健康检查: http://${hostname}:${port}/health`);

@@ -1,11 +1,11 @@
 {
-  "name": "@opentermux/relay",
+  "name": "@mytermux/relay",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "opentermux-relay": "./dist/cli.js"
+    "mytermux-relay": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -20,7 +20,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@opentermux/shared": "workspace:*",
+    "@mytermux/shared": "workspace:*",
     "@hono/node-server": "^1.14.0",
     "commander": "^13.1.0",
     "hono": "^4.7.4",

@@ -1,8 +1,8 @@
-# OpenTermux 计划（Web 独立授权版）
+# MyTermux 计划（Web 独立授权版）
 
 ## 目标
 
-将 OpenTermux 稳定为“Web 登录后管理 daemon 并连接终端”的产品模型。
+将 MyTermux 稳定为“Web 登录后管理 daemon 并连接终端”的产品模型。
 
 ## 当前基线（已落地）
 
@@ -37,7 +37,7 @@
 pnpm install
 pnpm turbo run clean
 pnpm turbo run build typecheck test
-rg -n --glob '!node_modules' 'opentermux-|token_auth|token_ack|ws-ticket|opentermux_web_session'
+rg -n --glob '!node_modules' 'mytermux-|token_auth|token_ack|ws-ticket|mytermux_web_session'
 ```
 
 ## 后续迭代建议

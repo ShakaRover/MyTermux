@@ -7,8 +7,8 @@
  * - 验证消息来源和目标
  */
 
-import type { TransportMessage } from '@opentermux/shared';
-import { createTransportMessage } from '@opentermux/shared';
+import type { TransportMessage } from '@mytermux/shared';
+import { createTransportMessage } from '@mytermux/shared';
 import type { DeviceRegistry } from './device-registry';
 
 /** 路由结果 */

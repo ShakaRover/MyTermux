@@ -13,7 +13,7 @@ import {
   type SessionCloseMessage,
   type SessionInputMessage,
   type SessionResizeMessage,
-} from '@opentermux/shared';
+} from '@mytermux/shared';
 import { useSessionsStore } from '../stores/sessionsStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWebSocket } from './useWebSocket';

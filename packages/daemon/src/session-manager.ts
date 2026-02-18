@@ -11,7 +11,7 @@ import type {
   SessionInfo,
   SessionOptions,
   TerminalSessionOptions,
-} from '@opentermux/shared';
+} from '@mytermux/shared';
 import { TerminalSession } from './terminal-session.js';
 
 // ============================================================================

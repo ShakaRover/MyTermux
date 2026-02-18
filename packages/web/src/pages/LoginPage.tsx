@@ -44,7 +44,7 @@ export function LoginPage() {
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md rounded-2xl border border-gray-800 bg-gray-900/90 shadow-xl shadow-black/30 p-6">
         <div className="mb-6 text-center">
-          <h1 className="text-2xl font-bold text-gray-100">OpenTermux</h1>
+          <h1 className="text-2xl font-bold text-gray-100">MyTermux</h1>
           <p className="mt-2 text-sm text-gray-400">登录 Web 管理中心</p>
         </div>
 

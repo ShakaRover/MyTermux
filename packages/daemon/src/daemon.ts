@@ -13,13 +13,13 @@ import type {
   SessionCloseMessage,
   SessionInputMessage,
   SessionResizeMessage,
-} from '@opentermux/shared';
+} from '@mytermux/shared';
 import {
   createTransportMessage,
   generateMessageId,
   encryptJson,
   decryptJson,
-} from '@opentermux/shared';
+} from '@mytermux/shared';
 import { WsClient } from './ws-client.js';
 import { SessionManager } from './session-manager.js';
 import { AuthManager } from './auth-manager.js';

@@ -12,7 +12,7 @@ import {
   type SessionListResponseMessage,
   type SessionClosedMessage,
   type SessionOutputMessage,
-} from '@opentermux/shared';
+} from '@mytermux/shared';
 import { useSessionsStore } from '../stores/sessionsStore';
 import { useConnectionStore } from '../stores/connectionStore';
 

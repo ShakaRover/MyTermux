@@ -7,7 +7,7 @@
 import { EventEmitter } from 'events';
 import * as pty from 'node-pty';
 import type { IPty } from 'node-pty';
-import type { SessionInfo, SessionStatus, TerminalSessionOptions } from '@opentermux/shared';
+import type { SessionInfo, SessionStatus, TerminalSessionOptions } from '@mytermux/shared';
 import { createPtyEnv } from './pty-env.js';
 
 // ============================================================================

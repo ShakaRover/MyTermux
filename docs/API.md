@@ -1,8 +1,8 @@
-# OpenTermux API 文档
+# MyTermux API 文档
 
 版本：`1.0.0`
 
-OpenTermux 协议分为两层：
+MyTermux 协议分为两层：
 
 1. 传输层（Relay 可见）：设备注册、token 认证、路由
 2. 应用层（E2E 加密）：终端会话管理与交互
@@ -13,8 +13,8 @@ OpenTermux 协议分为两层：
 
 ### 1.1 Cookie 与 CSRF
 
-- 会话 Cookie：`opentermux_web_session`（`HttpOnly`, `SameSite=Strict`）
-- CSRF Cookie：`opentermux_csrf_token`
+- 会话 Cookie：`mytermux_web_session`（`HttpOnly`, `SameSite=Strict`）
+- CSRF Cookie：`mytermux_csrf_token`
 - 写操作（POST/PATCH/PUT）需要 `X-CSRF-Token` 请求头
 
 ### 1.2 暴力破解防护
@@ -135,7 +135,7 @@ OpenTermux 协议分为两层：
       "id": "profile-1",
       "name": "MacBook",
       "daemonId": "daemon-1",
-      "accessTokenMasked": "opentermux-abcd...1234",
+      "accessTokenMasked": "mytermux-abcd...1234",
       "hasToken": true,
       "defaultCwd": "/Users/me",
       "defaultCommandMode": "tmux",
@@ -157,7 +157,7 @@ OpenTermux 协议分为两层：
 ```json
 {
   "name": "MacBook",
-  "accessToken": "opentermux-...",
+  "accessToken": "mytermux-...",
   "daemonId": null,
   "defaultCwd": "/Users/me/project",
   "defaultCommandMode": "zsh",

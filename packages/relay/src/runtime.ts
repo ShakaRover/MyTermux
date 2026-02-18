@@ -24,8 +24,8 @@ export interface RelayRuntime {
 
 /** 初始化 Relay 全量运行时组件 */
 export function initializeRelayRuntime(): RelayRuntime {
-  const dbPath = process.env['RELAY_DB_PATH'] || path.join(os.homedir(), '.opentermux', 'relay.db');
-  const masterKey = process.env['RELAY_WEB_MASTER_KEY'] || 'opentermux-dev-master-key';
+  const dbPath = process.env['RELAY_DB_PATH'] || path.join(os.homedir(), '.mytermux', 'relay.db');
+  const masterKey = process.env['RELAY_WEB_MASTER_KEY'] || 'mytermux-dev-master-key';
 
   if (!process.env['RELAY_WEB_MASTER_KEY']) {
     console.warn('[Relay] 未设置 RELAY_WEB_MASTER_KEY，当前使用开发默认值，请勿用于生产环境');
@@ -73,7 +73,7 @@ function resolveAdminPasswordHash(): string {
     return inputHash;
   }
 
-  const defaultPassword = 'opentermux';
-  console.warn('[Relay] 未设置 RELAY_ADMIN_PASSWORD_HASH，使用默认管理员密码: opentermux（仅开发环境）');
+  const defaultPassword = 'mytermux';
+  console.warn('[Relay] 未设置 RELAY_ADMIN_PASSWORD_HASH，使用默认管理员密码: mytermux（仅开发环境）');
   return hashPassword(defaultPassword);
 }

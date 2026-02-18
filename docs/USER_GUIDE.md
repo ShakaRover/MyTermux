@@ -1,8 +1,8 @@
-# OpenTermux 用户指南
+# MyTermux 用户指南
 
 ## 1. 使用流程总览
 
-OpenTermux 当前推荐流程：
+MyTermux 当前推荐流程：
 
 1. 启动 relay（Web 登录入口 + 中继）
 2. 启动 daemon（提供 Access Token）
@@ -28,7 +28,7 @@ pnpm turbo run build
 ### 3.2 启动 relay
 
 ```bash
-pnpm --filter @opentermux/relay start:fg
+pnpm --filter @mytermux/relay start:fg
 ```
 
 默认地址：
@@ -36,24 +36,24 @@ pnpm --filter @opentermux/relay start:fg
 - HTTP: `http://localhost:3000`
 - WebSocket: `ws://localhost:3000/ws`
 
-> 开发环境未设置管理员环境变量时，默认账号：`admin`，默认密码：`opentermux`。
+> 开发环境未设置管理员环境变量时，默认账号：`admin`，默认密码：`mytermux`。
 
 ### 3.3 启动 daemon
 
 ```bash
-pnpm --filter @opentermux/daemon start:fg
+pnpm --filter @mytermux/daemon start:fg
 ```
 
 查看完整 token：
 
 ```bash
-pnpm --filter @opentermux/daemon token
+pnpm --filter @mytermux/daemon token
 ```
 
 ### 3.4 启动 Web
 
 ```bash
-pnpm --filter @opentermux/web dev
+pnpm --filter @mytermux/web dev
 ```
 
 浏览器打开 `http://localhost:5173`，进入 `/login` 登录。
@@ -86,20 +86,20 @@ pnpm --filter @opentermux/web dev
 
 ```bash
 # daemon
-pnpm --filter @opentermux/daemon start
-pnpm --filter @opentermux/daemon stop
-pnpm --filter @opentermux/daemon status
-pnpm --filter @opentermux/daemon token
+pnpm --filter @mytermux/daemon start
+pnpm --filter @mytermux/daemon stop
+pnpm --filter @mytermux/daemon status
+pnpm --filter @mytermux/daemon token
 
 # relay
-pnpm --filter @opentermux/relay start
-pnpm --filter @opentermux/relay stop
-pnpm --filter @opentermux/relay status
+pnpm --filter @mytermux/relay start
+pnpm --filter @mytermux/relay stop
+pnpm --filter @mytermux/relay status
 ```
 
 ## 7. 本地数据目录
 
-`~/.opentermux`
+`~/.mytermux`
 
 - `auth.json`：daemon 认证信息
 - `daemon.pid` / `daemon.status`
@@ -117,7 +117,7 @@ pnpm --filter @opentermux/relay status
 
 - 确认 profile 已配置有效 token
 - 在 `/daemons` 中重新绑定 daemonId
-- 确认 token 前缀为 `opentermux-`
+- 确认 token 前缀为 `mytermux-`
 
 ### 8.3 终端无输出或频繁断开
 
@@ -127,4 +127,4 @@ pnpm --filter @opentermux/relay status
 
 ## 9. 历史目录说明
 
-OpenTermux 不会自动迁移或删除历史版本目录，请手动处理旧数据。
+MyTermux 不会自动迁移或删除历史版本目录，请手动处理旧数据。

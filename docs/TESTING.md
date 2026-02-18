@@ -1,4 +1,4 @@
-# OpenTermux 测试文档
+# MyTermux 测试文档
 
 ## 1. 自动化验证
 
@@ -11,10 +11,10 @@ pnpm turbo run build typecheck test
 ### 1.2 包级
 
 ```bash
-pnpm --filter @opentermux/shared test
-pnpm --filter @opentermux/relay test
-pnpm --filter @opentermux/daemon test
-pnpm --filter @opentermux/web test
+pnpm --filter @mytermux/shared test
+pnpm --filter @mytermux/relay test
+pnpm --filter @mytermux/daemon test
+pnpm --filter @mytermux/web test
 ```
 
 当前覆盖重点：
@@ -28,9 +28,9 @@ pnpm --filter @opentermux/web test
 ### 2.1 启动组件
 
 ```bash
-pnpm --filter @opentermux/relay start:fg
-pnpm --filter @opentermux/daemon start:fg
-pnpm --filter @opentermux/web dev
+pnpm --filter @mytermux/relay start:fg
+pnpm --filter @mytermux/daemon start:fg
+pnpm --filter @mytermux/web dev
 ```
 
 ### 2.2 Web 登录与管理
@@ -60,7 +60,7 @@ pnpm --filter @opentermux/web dev
 ## 3. 协议与命名扫描
 
 ```bash
-rg -n --glob '!node_modules' 'token_auth|token_ack|opentermux-|opentermux_web_session|ws-ticket'
+rg -n --glob '!node_modules' 'token_auth|token_ack|mytermux-|mytermux_web_session|ws-ticket'
 ```
 
 期望：核心协议、命名与实现一致。

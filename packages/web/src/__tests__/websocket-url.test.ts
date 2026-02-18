@@ -27,11 +27,11 @@ describe('buildWsUrl', () => {
     windowHolder.window = {
       location: {
         protocol: 'https:',
-        host: 'opentermux.example.com',
+        host: 'mytermux.example.com',
       },
     };
 
     const url = buildWsUrl('/ws', 'ticket-123');
-    expect(url).toBe('wss://opentermux.example.com/ws?ticket=ticket-123');
+    expect(url).toBe('wss://mytermux.example.com/ws?ticket=ticket-123');
   });
 });

@@ -1,10 +1,10 @@
 {
-  "name": "@opentermux/daemon",
+  "name": "@mytermux/daemon",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "bin": {
-    "opentermux": "./dist/index.js"
+    "mytermux": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -20,7 +20,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@opentermux/shared": "workspace:*",
+    "@mytermux/shared": "workspace:*",
     "commander": "^13.1.0",
     "node-pty": "^1.0.0",
     "ws": "^8.18.0"

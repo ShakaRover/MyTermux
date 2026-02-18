@@ -81,7 +81,7 @@ describe('Protocol Module', () => {
       const message: TransportMessage = {
         type: 'token_auth',
         from: 'client-123',
-        payload: JSON.stringify({ deviceType: 'client', publicKey: 'key', accessToken: 'opentermux-abc' }),
+        payload: JSON.stringify({ deviceType: 'client', publicKey: 'key', accessToken: 'mytermux-abc' }),
         timestamp: Date.now(),
       };
 

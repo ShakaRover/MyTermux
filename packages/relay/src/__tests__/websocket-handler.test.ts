@@ -12,7 +12,7 @@ import { EventEmitter } from 'events';
 import { WebSocketHandler } from '../websocket-handler';
 import type { DeviceRegistry } from '../device-registry';
 import type { MessageRouter } from '../message-router';
-import { createTransportMessage } from '@opentermux/shared';
+import { createTransportMessage } from '@mytermux/shared';
 import type { WsTicketService } from '../auth/ws-ticket';
 
 // ============================================================================

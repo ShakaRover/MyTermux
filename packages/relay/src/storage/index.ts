@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { DaemonProfile, DefaultCommandMode, WebPreferences, WebShortcut } from '@opentermux/shared';
+import type { DaemonProfile, DefaultCommandMode, WebPreferences, WebShortcut } from '@mytermux/shared';
 import { decryptToken, deriveAesKey, encryptToken, maskAccessToken } from './crypto.js';
 
 /** 登录尝试记录（按 ip+username 维度） */

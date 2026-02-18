@@ -5,9 +5,9 @@ import type { RelayStorage, WebSessionRecord } from '../storage/index.js';
 import { generateCsrfToken } from './csrf.js';
 
 /** 会话 Cookie 名 */
-export const WEB_SESSION_COOKIE_NAME = 'opentermux_web_session';
+export const WEB_SESSION_COOKIE_NAME = 'mytermux_web_session';
 /** CSRF Cookie 名 */
-export const WEB_CSRF_COOKIE_NAME = 'opentermux_csrf_token';
+export const WEB_CSRF_COOKIE_NAME = 'mytermux_csrf_token';
 /** 会话有效期（12 小时） */
 export const WEB_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 

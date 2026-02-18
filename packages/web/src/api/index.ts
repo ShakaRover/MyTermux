@@ -4,7 +4,7 @@ import type {
   OnlineDaemon,
   WebPreferences,
   WebShortcut,
-} from '@opentermux/shared';
+} from '@mytermux/shared';
 import { apiRequest, resetCsrfTokenCache } from './client';
 
 export interface WebAuthSession {

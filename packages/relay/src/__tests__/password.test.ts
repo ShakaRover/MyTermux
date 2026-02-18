@@ -3,7 +3,7 @@ import { hashPassword, isScryptHash, verifyPassword } from '../auth/password';
 
 describe('password utils', () => {
   it('should generate valid scrypt hash format', () => {
-    const hash = hashPassword('opentermux');
+    const hash = hashPassword('mytermux');
     expect(hash.startsWith('scrypt$')).toBe(true);
     expect(isScryptHash(hash)).toBe(true);
   });

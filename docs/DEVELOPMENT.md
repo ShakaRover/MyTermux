@@ -1,8 +1,8 @@
-# OpenTermux 开发文档
+# MyTermux 开发文档
 
 ## 1. 当前产品模型
 
-OpenTermux 已切换为：
+MyTermux 已切换为：
 
 - Web 独立登录（非 daemon token 直登）
 - 登录后管理 daemon profile 并连接
@@ -36,9 +36,9 @@ pnpm turbo run build
 启动：
 
 ```bash
-pnpm --filter @opentermux/relay start:fg
-pnpm --filter @opentermux/daemon start:fg
-pnpm --filter @opentermux/web dev
+pnpm --filter @mytermux/relay start:fg
+pnpm --filter @mytermux/daemon start:fg
+pnpm --filter @mytermux/web dev
 ```
 
 ## 5. 协议与类型关键点
@@ -50,10 +50,10 @@ pnpm --filter @opentermux/web dev
 
 ## 6. 代码约定
 
-- 包作用域：`@opentermux/*`
-- CLI：`opentermux` / `opentermux-relay`
+- 包作用域：`@mytermux/*`
+- CLI：`mytermux` / `mytermux-relay`
 - 术语：统一使用 `auth`（不再使用 `pairing`）
-- 运行目录：`~/.opentermux`
+- 运行目录：`~/.mytermux`
 
 ## 7. 常用命令
 

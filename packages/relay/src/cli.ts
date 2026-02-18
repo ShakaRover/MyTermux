@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * @opentermux/relay CLI 入口
+ * @mytermux/relay CLI 入口
  *
  * 命令：
- * - opentermux-relay start      启动中继服务器（后台）
- * - opentermux-relay start -f   前台运行
- * - opentermux-relay stop       停止中继服务器
- * - opentermux-relay status     查看状态
+ * - mytermux-relay start      启动中继服务器（后台）
+ * - mytermux-relay start -f   前台运行
+ * - mytermux-relay stop       停止中继服务器
+ * - mytermux-relay status     查看状态
  */
 
 import { Command } from 'commander';
@@ -23,7 +23,7 @@ import { fetchHealthStatus } from './health-check.js';
 // ============================================================================
 
 /** 配置目录 */
-const CONFIG_DIR = path.join(os.homedir(), '.opentermux');
+const CONFIG_DIR = path.join(os.homedir(), '.mytermux');
 
 /** PID 文件路径 */
 const PID_FILE = path.join(CONFIG_DIR, 'relay.pid');
@@ -154,8 +154,8 @@ async function stopProcess(pid: number): Promise<void> {
 const program = new Command();
 
 program
-  .name('opentermux-relay')
-  .description('OpenTermux Relay Server - 中继服务器管理')
+  .name('mytermux-relay')
+  .description('MyTermux Relay Server - 中继服务器管理')
   .version('1.0.0');
 
 /**
@@ -266,7 +266,7 @@ program
     const { app, deviceRegistry, wsHandler } = runtime;
 
     const protocol = useTls ? 's' : '';
-    console.log(`[Relay] OpenTermux Relay Server 启动中，地址: ${host}:${port}${useTls ? ' (TLS)' : ''}...`);
+    console.log(`[Relay] MyTermux Relay Server 启动中，地址: ${host}:${port}${useTls ? ' (TLS)' : ''}...`);
 
     // 启动 HTTP/HTTPS 服务器
     const serveOptions: Parameters<typeof serve>[0] = {
@@ -306,7 +306,7 @@ program
     // 写入 PID 文件
     await writePidFile(process.pid);
 
-    console.log(`[Relay] OpenTermux Relay Server 已启动`);
+    console.log(`[Relay] MyTermux Relay Server 已启动`);
     console.log(`[Relay] HTTP${protocol}: http${protocol}://${host}:${port}`);
     console.log(`[Relay] WebSocket: ws${protocol}://${host}:${port}/ws`);
     console.log(`[Relay] 健康检查: http${protocol}://${host}:${port}/health`);

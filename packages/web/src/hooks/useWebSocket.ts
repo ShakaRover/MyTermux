@@ -14,7 +14,7 @@ import {
   isTransportMessage,
   type AppMessage,
   type DaemonProfile,
-} from '@opentermux/shared';
+} from '@mytermux/shared';
 import { requestWsTicket } from '../api';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useEncryption } from './useEncryption';

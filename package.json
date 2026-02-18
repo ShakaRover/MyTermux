@@ -1,5 +1,5 @@
 {
-  "name": "opentermux",
+  "name": "mytermux",
   "version": "1.0.0",
   "private": true,
   "description": "远程控制终端会话 - 通过 Web 界面随时随地查看和控制本地电脑上的终端会话",

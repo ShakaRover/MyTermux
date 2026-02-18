@@ -5,7 +5,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import type { SessionOptions } from '@opentermux/shared';
+import type { SessionOptions } from '@mytermux/shared';
 
 /** 新建会话对话框 Props */
 export interface NewSessionDialogProps {

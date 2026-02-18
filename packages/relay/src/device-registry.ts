@@ -8,7 +8,7 @@
  */
 
 import type { WebSocket } from 'ws';
-import type { DeviceType, OnlineDaemon } from '@opentermux/shared';
+import type { DeviceType, OnlineDaemon } from '@mytermux/shared';
 
 /** 设备连接信息 */
 interface DeviceConnection {

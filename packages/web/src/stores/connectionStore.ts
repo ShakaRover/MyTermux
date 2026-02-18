@@ -5,7 +5,7 @@
  */
 
 import { create } from 'zustand';
-import type { AppMessage, DaemonProfile, KeyPair } from '@opentermux/shared';
+import type { AppMessage, DaemonProfile, KeyPair } from '@mytermux/shared';
 
 /** 连接状态枚举 */
 export type ConnectionState =

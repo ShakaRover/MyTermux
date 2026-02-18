@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * @opentermux/daemon CLI 入口
+ * @mytermux/daemon CLI 入口
  *
  * 命令：
- * - opentermux start  启动守护进程
- * - opentermux stop   停止守护进程
- * - opentermux status 查看状态
- * - opentermux token  查看 Access Token
+ * - mytermux start  启动守护进程
+ * - mytermux stop   停止守护进程
+ * - mytermux status 查看状态
+ * - mytermux token  查看 Access Token
  */
 
 import { Command } from 'commander';
@@ -23,7 +23,7 @@ import { readAccessToken } from './auth-manager.js';
 // ============================================================================
 
 /** 配置目录 */
-const CONFIG_DIR = path.join(os.homedir(), '.opentermux');
+const CONFIG_DIR = path.join(os.homedir(), '.mytermux');
 
 /** 认证数据文件路径 */
 const AUTH_DATA_FILE = path.join(CONFIG_DIR, 'auth.json');
@@ -129,8 +129,8 @@ async function readStatusFile(): Promise<Record<string, unknown> | null> {
 const program = new Command();
 
 program
-  .name('opentermux')
-  .description('OpenTermux - 远程控制终端会话守护进程')
+  .name('mytermux')
+  .description('MyTermux - 远程控制终端会话守护进程')
   .version('1.0.0');
 
 /**
@@ -191,7 +191,7 @@ program
           } catch (readErr) {
             // I7: 区分文件不存在（正常情况）和其他错误
             if ((readErr as NodeJS.ErrnoException).code === 'ENOENT') {
-              console.log('提示: 运行 pnpm --filter @opentermux/daemon token 获取 Access Token');
+              console.log('提示: 运行 pnpm --filter @mytermux/daemon token 获取 Access Token');
             } else {
               console.warn('读取 Access Token 失败:', readErr instanceof Error ? readErr.message : readErr);
             }
@@ -365,12 +365,12 @@ program
       // 检查 daemon 是否在运行
       const pid = await readPidFile();
       if (!pid || !isProcessRunning(pid)) {
-        console.log('\n注意: 守护进程未在运行，请先执行 opentermux start');
+        console.log('\n注意: 守护进程未在运行，请先执行 mytermux start');
       }
     } catch (error) {
       // I11: 简化 ENOENT 检查
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        console.log('未找到配置文件，请先启动守护进程 (opentermux start)');
+        console.log('未找到配置文件，请先启动守护进程 (mytermux start)');
       } else {
         console.error('读取配置文件失败:', error instanceof Error ? error.message : error);
       }
