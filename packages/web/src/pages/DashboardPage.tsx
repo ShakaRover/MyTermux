@@ -12,13 +12,13 @@ import type { SessionOptions } from '@mytermux/shared';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useSessionsStore } from '../stores/sessionsStore';
 import { useSessions } from '../hooks/useSessions';
+import { useWebSocket } from '../hooks/useWebSocket';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { SessionList } from '../components/SessionList';
 import { TerminalView } from '../components/TerminalView';
 import { NewSessionDialog } from '../components/NewSessionDialog';
 import { TerminalShortcutBar } from '../components/TerminalShortcutBar';
 import { useWebPreferencesStore } from '../stores/webPreferencesStore';
-import { buildDefaultSessionOptions } from '../utils/sessionDefaults';
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -33,12 +33,14 @@ export function DashboardPage() {
     daemonId,
     activeProfile,
     disconnect,
+    setActiveProfile,
+    error: connectionError,
   } = useConnectionStore();
+  const { connectWithProfile, isConnecting } = useWebSocket();
 
   const {
     sessions,
     activeSessionId,
-    isLoading,
     getActiveSession,
   } = useSessionsStore();
 
@@ -55,27 +57,67 @@ export function DashboardPage() {
     loadPreferences,
   } = useWebPreferencesStore();
 
-  const autoCreatedDaemonRef = useRef<string | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const manualDisconnectRef = useRef(false);
 
   const activeSession = getActiveSession();
+  const isAuthenticated = connectionState === 'authenticated';
+  const shouldWaitForConnection = !isAuthenticated && Boolean(activeProfile);
+
+  const clearReconnectTimer = useCallback(() => {
+    if (!reconnectTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(reconnectTimerRef.current);
+    reconnectTimerRef.current = null;
+  }, []);
 
   useEffect(() => {
-    if (connectionState !== 'authenticated') {
-      navigate('/daemons', { replace: true });
+    return () => {
+      clearReconnectTimer();
+    };
+  }, [clearReconnectTimer]);
+
+  useEffect(() => {
+    if (connectionState === 'authenticated') {
+      manualDisconnectRef.current = false;
+      clearReconnectTimer();
+      return;
     }
-  }, [connectionState, navigate]);
+
+    if (manualDisconnectRef.current) {
+      return;
+    }
+
+    if (!activeProfile) {
+      navigate('/daemons', { replace: true });
+      return;
+    }
+
+    if (connectionState === 'connecting' || connectionState === 'authenticating') {
+      return;
+    }
+
+    clearReconnectTimer();
+    reconnectTimerRef.current = setTimeout(() => {
+      void connectWithProfile(activeProfile).catch((error) => {
+        console.warn('自动重连失败，稍后重试:', error);
+      });
+    }, 1200);
+  }, [activeProfile, clearReconnectTimer, connectWithProfile, connectionState, navigate]);
 
   useEffect(() => {
     void loadPreferences().catch(() => undefined);
   }, [loadPreferences]);
 
   useEffect(() => {
-    if (connectionState === 'authenticated') {
+    if (isAuthenticated) {
       void refreshSessions().catch((error) => {
         console.error('刷新会话列表失败:', error);
       });
     }
-  }, [connectionState, refreshSessions]);
+  }, [isAuthenticated, refreshSessions]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -112,34 +154,6 @@ export function DashboardPage() {
     };
   }, [isTouchDevice]);
 
-  useEffect(() => {
-    if (!daemonId) {
-      autoCreatedDaemonRef.current = null;
-      return;
-    }
-
-    if (connectionState !== 'authenticated' || isLoading) {
-      return;
-    }
-
-    if (autoCreatedDaemonRef.current === daemonId) {
-      return;
-    }
-
-    if (sessions.length > 0) {
-      autoCreatedDaemonRef.current = daemonId;
-      return;
-    }
-
-    autoCreatedDaemonRef.current = daemonId;
-
-    const defaults = buildDefaultSessionOptions(activeProfile);
-    void createSession(defaults).catch((error) => {
-      console.error('自动创建默认会话失败:', error);
-      autoCreatedDaemonRef.current = null;
-    });
-  }, [activeProfile, connectionState, createSession, daemonId, isLoading, sessions.length]);
-
   const showShortcutBar = useMemo(() => {
     return Boolean(
       activeSessionId &&
@@ -151,9 +165,12 @@ export function DashboardPage() {
   }, [activeSessionId, terminalFocused, isTouchDevice, softKeyboardVisible, preferences]);
 
   const handleDisconnect = useCallback(() => {
+    manualDisconnectRef.current = true;
+    clearReconnectTimer();
+    setActiveProfile(null);
     disconnect();
     navigate('/daemons', { replace: true });
-  }, [disconnect, navigate]);
+  }, [clearReconnectTimer, disconnect, navigate, setActiveProfile]);
 
   const handleCreateSession = useCallback(
     async (options?: SessionOptions) => {
@@ -261,6 +278,7 @@ export function DashboardPage() {
           <div className="p-3 border-b border-gray-800 space-y-2">
             <button
               onClick={() => setIsNewSessionDialogOpen(true)}
+              disabled={!isAuthenticated}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -282,6 +300,7 @@ export function DashboardPage() {
           <div className="p-2 border-b border-gray-800">
             <button
               onClick={() => setIsNewSessionDialogOpen(true)}
+              disabled={!isAuthenticated}
               className="w-full flex items-center justify-center p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
               title="新建会话"
             >
@@ -358,7 +377,27 @@ export function DashboardPage() {
       </aside>
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        {activeSession ? (
+        {shouldWaitForConnection ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 px-6">
+            <div className="w-8 h-8 rounded-full border-2 border-gray-600 border-t-emerald-400 animate-spin mb-4" />
+            <h3 className="text-lg font-medium text-gray-200 mb-2">
+              {connectionState === 'error' ? '连接已断开，正在重连...' : '正在连接会话...'}
+            </h3>
+            <p className="text-sm text-gray-500 text-center max-w-md">
+              当前配置: {activeProfile?.name || daemonId || '未命名 daemon'}。
+              {isConnecting ? ' 正在发起连接请求，请稍候。' : ' 将自动持续重试，直到连接恢复。'}
+            </p>
+            {connectionError && connectionState === 'error' && (
+              <p className="mt-3 text-xs text-red-400 break-all text-center max-w-xl">{connectionError}</p>
+            )}
+            <button
+              onClick={() => navigate('/daemons')}
+              className="mt-6 rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-200 hover:border-emerald-500"
+            >
+              返回 Daemon 管理中心
+            </button>
+          </div>
+        ) : activeSession ? (
           <>
             <header className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-900/50">
               <div className="flex items-center gap-3">
@@ -395,7 +434,7 @@ export function DashboardPage() {
                   onInput={(data) => void handleTerminalInput(data)}
                   onResize={(cols, rows) => void handleTerminalResize(cols, rows)}
                   onFocusChange={setTerminalFocused}
-                  disabled={activeSession.status !== 'running'}
+                  disabled={activeSession.status !== 'running' || !isAuthenticated}
                   className="h-full"
                 />
               </div>
@@ -423,11 +462,12 @@ export function DashboardPage() {
             </h3>
             <p className="text-sm text-gray-500 mb-6">
               {sessions.length === 0
-                ? '创建一个新的终端会话（支持自动运行默认命令）'
-                : '从左侧列表选择一个会话，或创建新会话'}
+                ? '当前 daemon 暂无会话，可手动新建一个会话'
+                : '从左侧列表选择一个会话，或手动创建新会话'}
             </p>
             <button
               onClick={() => setIsNewSessionDialogOpen(true)}
+              disabled={!isAuthenticated}
               className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

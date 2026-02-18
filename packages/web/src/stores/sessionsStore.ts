@@ -58,11 +58,23 @@ export const useSessionsStore = create<SessionsStoreState & SessionsStoreActions
     ...initialState,
 
     setSessions: (sessions) =>
-      set({
-        sessions: sessions.map((s): SessionData => ({
+      set((state) => {
+        const nextSessions = sessions.map((s): SessionData => ({
           ...s,
           terminalBuffer: s.outputHistory ?? '',
-        })),
+        }));
+
+        // 刷新会话列表时优先保持当前激活会话，不存在则自动切到第一条
+        const activeStillExists = state.activeSessionId
+          ? nextSessions.some((session) => session.id === state.activeSessionId)
+          : false;
+
+        return {
+          sessions: nextSessions,
+          activeSessionId: activeStillExists
+            ? state.activeSessionId
+            : (nextSessions[0]?.id ?? null),
+        };
       }),
 
     addSession: (session) =>
