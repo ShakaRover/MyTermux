@@ -12,7 +12,7 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import type { DefaultCommandMode, WebShortcut } from '@mytermux/shared';
 import type { DeviceRegistry } from './device-registry.js';
-import type { RelayStorage, DaemonProfileInput, DaemonProfilePatch } from './storage/index.js';
+import type { RelayStorage, DaemonProfilePatch } from './storage/index.js';
 import { LoginBruteforceGuard } from './auth/bruteforce.js';
 import { requireCsrfToken, requireWebSession, type AuthVariables, getClientIp } from './auth/middleware.js';
 import { verifyPassword } from './auth/password.js';
@@ -151,6 +151,8 @@ export function createServer(options: ServerOptions = {}) {
     }
 
     const onlineDaemons = options.deviceRegistry?.getOnlineDaemons() ?? [];
+    syncDaemonProfilesWithOnlineDaemons(storage, onlineDaemons);
+
     const onlineById = new Map(onlineDaemons.map((item) => [item.daemonId, item]));
 
     const profiles = storage.listDaemonProfiles().map((profile) => {
@@ -174,19 +176,7 @@ export function createServer(options: ServerOptions = {}) {
     requireSession,
     requireCsrfToken(),
     async (c) => {
-      const storage = options.storage;
-      if (!storage) {
-        return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
-      }
-
-      const body = await parseJson<Record<string, unknown>>(c);
-      const input = parseCreateProfileInput(body);
-      if (!input) {
-        return c.json({ error: 'INVALID_INPUT', message: 'daemon profile 参数无效' }, 400);
-      }
-
-      const profile = storage.createDaemonProfile(randomUUID(), input);
-      return c.json({ profile }, 201);
+      return c.json({ error: 'API_DISABLED', message: 'profile 为 daemonId 自动创建，不支持手动新增' }, 405);
     },
   );
 
@@ -203,6 +193,21 @@ export function createServer(options: ServerOptions = {}) {
 
       const profileId = c.req.param('id');
       const body = await parseJson<Record<string, unknown>>(c);
+
+      if (body && Object.prototype.hasOwnProperty.call(body, 'daemonId')) {
+        return c.json({ error: 'IMMUTABLE_FIELD', message: 'daemonId 创建后不可修改' }, 400);
+      }
+
+      const profile = storage.getDaemonProfile(profileId);
+      if (!profile) {
+        return c.json({ error: 'NOT_FOUND', message: 'daemon profile 不存在' }, 404);
+      }
+
+      const onlineDaemonIds = new Set((options.deviceRegistry?.getOnlineDaemons() ?? []).map((item) => item.daemonId));
+      if (!profile.daemonId || !onlineDaemonIds.has(profile.daemonId)) {
+        return c.json({ error: 'PROFILE_OFFLINE', message: '离线 daemon 的配置仅支持手动删除' }, 409);
+      }
+
       const patch = parsePatchProfileInput(body);
 
       if (!patch) {
@@ -218,9 +223,9 @@ export function createServer(options: ServerOptions = {}) {
     },
   );
 
-  // Daemon Profile - 绑定在线 daemonId
-  app.post(
-    '/api/daemon-profiles/:id/bind',
+  // Daemon Profile - 删除（仅离线配置允许手动删除）
+  app.delete(
+    '/api/daemon-profiles/:id',
     requireSession,
     requireCsrfToken(),
     async (c) => {
@@ -230,15 +235,32 @@ export function createServer(options: ServerOptions = {}) {
       }
 
       const profileId = c.req.param('id');
-      const body = await parseJson<{ daemonId?: string | null }>(c);
-      const daemonId = typeof body?.daemonId === 'string' ? body.daemonId.trim() : body?.daemonId ?? null;
+      const profile = storage.getDaemonProfile(profileId);
+      if (!profile) {
+        return c.json({ error: 'NOT_FOUND', message: 'daemon profile 不存在' }, 404);
+      }
+
+      const onlineDaemonIds = new Set((options.deviceRegistry?.getOnlineDaemons() ?? []).map((item) => item.daemonId));
+      if (profile.daemonId && onlineDaemonIds.has(profile.daemonId)) {
+        return c.json({ error: 'PROFILE_ONLINE', message: '在线 daemon 的配置不允许删除' }, 409);
+      }
 
       try {
-        const profile = storage.bindDaemonProfile(profileId, daemonId || null);
-        return c.json({ profile });
+        storage.deleteDaemonProfile(profileId);
+        return c.json({ success: true });
       } catch (error) {
         return c.json({ error: 'NOT_FOUND', message: toErrorMessage(error) }, 404);
       }
+    },
+  );
+
+  // Daemon Profile - 绑定在线 daemonId
+  app.post(
+    '/api/daemon-profiles/:id/bind',
+    requireSession,
+    requireCsrfToken(),
+    async (c) => {
+      return c.json({ error: 'API_DISABLED', message: 'daemonId 与 profile 一一对应，不支持手动绑定' }, 405);
     },
   );
 
@@ -333,9 +355,9 @@ export function createServer(options: ServerOptions = {}) {
         '/api/web-auth/csrf': 'GET - 获取 CSRF Token',
         '/api/ws-ticket': 'POST - 签发一次性 ws ticket',
         '/api/daemons': 'GET - 在线 daemon 与 profile 聚合视图',
-        '/api/daemon-profiles': 'POST - 新增 daemon profile',
-        '/api/daemon-profiles/:id': 'PATCH - 更新 daemon profile',
-        '/api/daemon-profiles/:id/bind': 'POST - 绑定 profile 与在线 daemon',
+        '/api/daemon-profiles': 'POST - 已禁用（profile 自动创建）',
+        '/api/daemon-profiles/:id': 'PATCH/DELETE - 更新或删除（仅离线可删除）',
+        '/api/daemon-profiles/:id/bind': 'POST - 已禁用（不支持手动绑定）',
         '/api/web-preferences': 'GET/PUT - 终端快捷键与常用字符配置',
       },
     });
@@ -372,29 +394,6 @@ async function parseJson<T>(c: Context): Promise<T | null> {
   } catch {
     return null;
   }
-}
-
-/** 创建 profile 入参校验 */
-function parseCreateProfileInput(body: Record<string, unknown> | null): DaemonProfileInput | null {
-  if (!body) {
-    return null;
-  }
-
-  const name = typeof body['name'] === 'string' ? body['name'].trim() : '';
-  const mode = normalizeCommandMode(body['defaultCommandMode']);
-
-  if (!name || !mode) {
-    return null;
-  }
-
-  return {
-    name,
-    daemonId: normalizeNullableString(body['daemonId']),
-    accessToken: normalizeNullableString(body['accessToken']),
-    defaultCwd: normalizeNullableString(body['defaultCwd']),
-    defaultCommandMode: mode,
-    defaultCommandValue: normalizeNullableString(body['defaultCommandValue']),
-  };
 }
 
 /** 更新 profile 入参校验 */
@@ -503,4 +502,49 @@ function normalizeCommandMode(value: unknown): DefaultCommandMode | null {
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '未知错误';
+}
+
+/**
+ * 同步 daemonId 与 profile 的一一映射：
+ * - 新在线 daemon 自动创建默认 profile
+ * - 离线 daemon 的 profile 保留，等待手动删除
+ * - 若同一 daemonId 存在多条 profile，保留一条并清理其余
+ * - 清理历史脏数据（daemonId 为空）
+ */
+function syncDaemonProfilesWithOnlineDaemons(
+  storage: RelayStorage,
+  onlineDaemons: Array<{ daemonId: string }>,
+): void {
+  const profiles = storage.listDaemonProfiles();
+  const keptDaemonIds = new Set<string>();
+
+  for (const profile of profiles) {
+    const daemonId = profile.daemonId?.trim();
+    if (!daemonId) {
+      storage.deleteDaemonProfile(profile.id);
+      continue;
+    }
+
+    if (keptDaemonIds.has(daemonId)) {
+      storage.deleteDaemonProfile(profile.id);
+      continue;
+    }
+
+    keptDaemonIds.add(daemonId);
+  }
+
+  for (const daemon of onlineDaemons) {
+    if (keptDaemonIds.has(daemon.daemonId)) {
+      continue;
+    }
+
+    storage.createDaemonProfile(randomUUID(), {
+      name: daemon.daemonId,
+      daemonId: daemon.daemonId,
+      defaultCommandMode: 'zsh',
+      defaultCwd: null,
+      defaultCommandValue: null,
+      accessToken: null,
+    });
+  }
 }

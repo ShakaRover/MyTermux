@@ -32,19 +32,9 @@ export interface WsTicketResponse {
   daemonId?: string | null;
 }
 
-export interface DaemonProfilePayload {
-  name: string;
-  accessToken?: string | null;
-  daemonId?: string | null;
-  defaultCwd?: string | null;
-  defaultCommandMode: DefaultCommandMode;
-  defaultCommandValue?: string | null;
-}
-
 export interface DaemonProfilePatchPayload {
   name?: string;
   accessToken?: string | null;
-  daemonId?: string | null;
   defaultCwd?: string | null;
   defaultCommandMode?: DefaultCommandMode;
   defaultCommandValue?: string | null;
@@ -79,15 +69,6 @@ export async function fetchDaemons(): Promise<DaemonListResponse> {
   return apiRequest<DaemonListResponse>('/daemons');
 }
 
-export async function createDaemonProfile(payload: DaemonProfilePayload): Promise<DaemonProfile> {
-  const response = await apiRequest<{ profile: DaemonProfile }>('/daemon-profiles', {
-    method: 'POST',
-    requireCsrf: true,
-    body: payload,
-  });
-  return response.profile;
-}
-
 export async function patchDaemonProfile(profileId: string, payload: DaemonProfilePatchPayload): Promise<DaemonProfile> {
   const response = await apiRequest<{ profile: DaemonProfile }>(`/daemon-profiles/${profileId}`, {
     method: 'PATCH',
@@ -97,13 +78,11 @@ export async function patchDaemonProfile(profileId: string, payload: DaemonProfi
   return response.profile;
 }
 
-export async function bindDaemonProfile(profileId: string, daemonId: string | null): Promise<DaemonProfile> {
-  const response = await apiRequest<{ profile: DaemonProfile }>(`/daemon-profiles/${profileId}/bind`, {
-    method: 'POST',
+export async function deleteDaemonProfile(profileId: string): Promise<void> {
+  await apiRequest(`/daemon-profiles/${profileId}`, {
+    method: 'DELETE',
     requireCsrf: true,
-    body: { daemonId },
   });
-  return response.profile;
 }
 
 export async function requestWsTicket(profileId: string): Promise<WsTicketResponse> {

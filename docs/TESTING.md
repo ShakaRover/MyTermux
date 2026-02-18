@@ -37,14 +37,15 @@ pnpm --filter @mytermux/web dev
 
 1. 打开 `http://localhost:5173/login`
 2. 使用管理员账号登录
-3. 在 `/daemons` 新建 profile（含 token）
-4. 绑定在线 daemon
-5. 点击“连接”进入 `/sessions`
+3. 在 `/daemons` 验证在线 daemon 自动生成 profile
+4. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）
+5. 让 daemon 离线，验证 profile 保留且支持手动删除
+6. 点击“连接”进入 `/sessions`
 
 ### 2.3 终端会话
 
-1. 验证会话自动创建（带 profile 默认参数）
-2. 新建会话并发送输入
+1. 验证进入 `/sessions` 后不会自动新建会话
+2. 手动新建会话并发送输入
 3. 校验会话列表显示 `PID`
 4. 调整窗口，验证 resize 正常
 5. 关闭会话，验证列表同步

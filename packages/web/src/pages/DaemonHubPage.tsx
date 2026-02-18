@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { DaemonProfile, DefaultCommandMode, WebShortcut } from '@mytermux/shared';
 import {
-  bindDaemonProfile,
-  createDaemonProfile,
+  deleteDaemonProfile,
   fetchDaemons,
   patchDaemonProfile,
 } from '../api';
@@ -56,14 +55,12 @@ export function DaemonHubPage() {
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [actionProfileId, setActionProfileId] = useState<string | null>(null);
+  const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
 
   const [shortcutDraft, setShortcutDraft] = useState<WebShortcut[]>([]);
   const [commonCharsDraft, setCommonCharsDraft] = useState('');
 
-  const currentModeLabel = useMemo(
-    () => (editingProfileId ? '编辑配置' : '新建配置'),
-    [editingProfileId],
-  );
+  const currentModeLabel = '编辑在线配置';
 
   const refreshDaemons = useCallback(async () => {
     setLoading(true);
@@ -94,22 +91,59 @@ export function DaemonHubPage() {
     setCommonCharsDraft(preferences.commonChars.join(', '));
   }, [preferences]);
 
+  const mapProfileToForm = useCallback((profile: DaemonProfile): ProfileFormState => ({
+    name: profile.name,
+    accessToken: '',
+    defaultCwd: profile.defaultCwd ?? '',
+    defaultCommandMode: profile.defaultCommandMode,
+    defaultCommandValue: profile.defaultCommandValue ?? '',
+    daemonId: profile.daemonId ?? '',
+  }), []);
+
+  useEffect(() => {
+    if (profiles.length === 0) {
+      setEditingProfileId(null);
+      setForm(EMPTY_FORM);
+      return;
+    }
+
+    const targetProfile = editingProfileId
+      ? profiles.find((profile) => profile.id === editingProfileId) ?? profiles[0]
+      : profiles[0];
+
+    if (!targetProfile) {
+      return;
+    }
+
+    if (editingProfileId !== targetProfile.id) {
+      setEditingProfileId(targetProfile.id);
+    }
+    setForm((current) => ({
+      ...mapProfileToForm(targetProfile),
+      // 避免重置用户正在输入的新 token，除非切换编辑目标
+      accessToken: editingProfileId === targetProfile.id ? current.accessToken : '',
+    }));
+  }, [editingProfileId, mapProfileToForm, profiles]);
+
   const resetForm = useCallback(() => {
-    setEditingProfileId(null);
-    setForm(EMPTY_FORM);
-  }, []);
+    if (!editingProfileId) {
+      setForm(EMPTY_FORM);
+      return;
+    }
+
+    const profile = profiles.find((item) => item.id === editingProfileId);
+    if (!profile) {
+      setForm(EMPTY_FORM);
+      return;
+    }
+
+    setForm(mapProfileToForm(profile));
+  }, [editingProfileId, mapProfileToForm, profiles]);
 
   const handleStartEdit = useCallback((profile: DaemonProfile) => {
     setEditingProfileId(profile.id);
-    setForm({
-      name: profile.name,
-      accessToken: '',
-      defaultCwd: profile.defaultCwd ?? '',
-      defaultCommandMode: profile.defaultCommandMode,
-      defaultCommandValue: profile.defaultCommandValue ?? '',
-      daemonId: profile.daemonId ?? '',
-    });
-  }, []);
+    setForm(mapProfileToForm(profile));
+  }, [mapProfileToForm]);
 
   const handleSubmitProfile = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -120,52 +154,30 @@ export function DaemonHubPage() {
       return;
     }
 
+    if (!editingProfileId) {
+      setError('当前没有可编辑的配置');
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
     try {
-      if (editingProfileId) {
-        await patchDaemonProfile(editingProfileId, {
-          name,
-          daemonId: form.daemonId.trim() || null,
-          defaultCwd: form.defaultCwd.trim() || null,
-          defaultCommandMode: form.defaultCommandMode,
-          defaultCommandValue: form.defaultCommandValue.trim() || null,
-          ...(form.accessToken.trim() && { accessToken: form.accessToken.trim() }),
-        });
-      } else {
-        await createDaemonProfile({
-          name,
-          daemonId: form.daemonId.trim() || null,
-          defaultCwd: form.defaultCwd.trim() || null,
-          defaultCommandMode: form.defaultCommandMode,
-          defaultCommandValue: form.defaultCommandValue.trim() || null,
-          accessToken: form.accessToken.trim() || null,
-        });
-      }
+      await patchDaemonProfile(editingProfileId, {
+        name,
+        defaultCwd: form.defaultCwd.trim() || null,
+        defaultCommandMode: form.defaultCommandMode,
+        defaultCommandValue: form.defaultCommandValue.trim() || null,
+        ...(form.accessToken.trim() && { accessToken: form.accessToken.trim() }),
+      });
 
-      resetForm();
       await refreshDaemons();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : '保存配置失败');
     } finally {
       setSubmitting(false);
     }
-  }, [editingProfileId, form, refreshDaemons, resetForm]);
-
-  const handleBindProfile = useCallback(async (profileId: string, daemonId: string) => {
-    setActionProfileId(profileId);
-    setError(null);
-
-    try {
-      await bindDaemonProfile(profileId, daemonId || null);
-      await refreshDaemons();
-    } catch (bindError) {
-      setError(bindError instanceof Error ? bindError.message : '绑定 daemon 失败');
-    } finally {
-      setActionProfileId(null);
-    }
-  }, [refreshDaemons]);
+  }, [editingProfileId, form, refreshDaemons]);
 
   const handleConnectProfile = useCallback(async (profile: DaemonProfile) => {
     setActionProfileId(profile.id);
@@ -180,6 +192,34 @@ export function DaemonHubPage() {
       setActionProfileId(null);
     }
   }, [connectWithProfile, navigate]);
+
+  const handleDeleteProfile = useCallback(async (profile: DaemonProfile) => {
+    if (profile.online) {
+      setError('在线 daemon 的配置不允许删除');
+      return;
+    }
+
+    const confirmed = window.confirm(`确认删除离线配置「${profile.name}」吗？删除后不可恢复。`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingProfileId(profile.id);
+    setError(null);
+
+    try {
+      await deleteDaemonProfile(profile.id);
+      if (editingProfileId === profile.id) {
+        setEditingProfileId(null);
+        setForm(EMPTY_FORM);
+      }
+      await refreshDaemons();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : '删除配置失败');
+    } finally {
+      setDeletingProfileId(null);
+    }
+  }, [editingProfileId, refreshDaemons]);
 
   const handleSavePreferences = useCallback(async () => {
     const normalizedChars = Array.from(new Set(
@@ -243,102 +283,45 @@ export function DaemonHubPage() {
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
+        <div className="grid gap-6 lg:grid-cols-[1.45fr_1fr]">
           <section className="space-y-4 rounded-2xl border border-gray-800 bg-gray-900/70 p-4 md:p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">在线 Daemon</h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Daemon 配置中心</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  在线 Daemon 与 profile 在这里统一管理：在线可编辑，离线可删除。
+                </p>
+              </div>
               <button
                 onClick={() => void refreshDaemons()}
                 disabled={loading}
                 className="rounded-lg border border-gray-700 px-3 py-1.5 text-sm text-gray-200 hover:border-emerald-500 disabled:opacity-60"
               >
-                刷新
+                {loading ? '刷新中...' : '刷新'}
               </button>
             </div>
 
-            {onlineDaemons.length === 0 ? (
-              <p className="text-sm text-gray-500">当前没有在线 daemon</p>
-            ) : (
-              <div className="space-y-2">
-                {onlineDaemons.map((daemon) => (
-                  <div key={daemon.daemonId} className="rounded-lg border border-gray-800 bg-gray-900/80 p-3">
-                    <p className="font-medium text-gray-100 break-all">{daemon.daemonId}</p>
-                    <p className="mt-1 text-xs text-gray-400">
-                      客户端连接数: {daemon.connectedClients}
-                      {' · '}
-                      最后心跳: {new Date(daemon.lastHeartbeat).toLocaleString('zh-CN')}
-                    </p>
-                  </div>
-                ))}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-gray-800 bg-gray-900/80 p-3">
+                <p className="text-xs text-gray-500">在线 Daemon</p>
+                <p className="mt-1 text-lg font-semibold text-emerald-400">{onlineDaemons.length}</p>
               </div>
-            )}
-
-            <h3 className="pt-2 text-base font-semibold">Daemon Profiles</h3>
-            {profiles.length === 0 ? (
-              <p className="text-sm text-gray-500">暂无配置，请先在右侧创建 profile</p>
-            ) : (
-              <div className="space-y-3">
-                {profiles.map((profile) => (
-                  <div key={profile.id} className="rounded-xl border border-gray-800 bg-gray-900/80 p-3">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="font-medium text-gray-100">{profile.name}</p>
-                        <p className="mt-1 text-xs text-gray-400 break-all">
-                          {profile.online ? '在线' : '离线'}
-                          {' · '}
-                          daemonId: {profile.daemonId || '未绑定'}
-                          {' · '}
-                          token: {profile.accessTokenMasked || '未设置'}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          默认目录: {profile.defaultCwd || '-'}
-                          {' · '}
-                          默认命令: {profile.defaultCommandMode}
-                          {profile.defaultCommandValue ? ` (${profile.defaultCommandValue})` : ''}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          onClick={() => handleStartEdit(profile)}
-                          className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-200 hover:border-emerald-500"
-                        >
-                          编辑
-                        </button>
-                        <button
-                          onClick={() => void handleConnectProfile(profile)}
-                          disabled={isConnecting || actionProfileId === profile.id || !profile.hasToken}
-                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
-                        >
-                          连接
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <label className="text-xs text-gray-400">绑定在线 daemon:</label>
-                      <select
-                        value={profile.daemonId ?? ''}
-                        onChange={(event) => void handleBindProfile(profile.id, event.target.value)}
-                        disabled={actionProfileId === profile.id}
-                        className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-gray-100"
-                      >
-                        <option value="">未绑定</option>
-                        {onlineDaemons.map((daemon) => (
-                          <option key={daemon.daemonId} value={daemon.daemonId}>
-                            {daemon.daemonId}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ))}
+              <div className="rounded-lg border border-gray-800 bg-gray-900/80 p-3">
+                <p className="text-xs text-gray-500">Profile 总数</p>
+                <p className="mt-1 text-lg font-semibold text-gray-100">{profiles.length}</p>
               </div>
-            )}
-          </section>
+              <div className="rounded-lg border border-gray-800 bg-gray-900/80 p-3">
+                <p className="text-xs text-gray-500">已配置 Token</p>
+                <p className="mt-1 text-lg font-semibold text-gray-100">
+                  {profiles.filter((profile) => profile.hasToken).length}
+                </p>
+              </div>
+            </div>
 
-          <section className="space-y-4">
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-4 md:p-5">
-              <h2 className="text-lg font-semibold">{currentModeLabel}</h2>
+            <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-4">
+              <h3 className="text-base font-semibold">{currentModeLabel}</h3>
+              <p className="mt-1 text-xs text-gray-500">每个 daemonId 自动对应一个 profile；在线可修改，离线仅支持手动删除。</p>
+
               <form className="mt-4 space-y-3" onSubmit={handleSubmitProfile}>
                 <input
                   type="text"
@@ -353,7 +336,7 @@ export function DaemonHubPage() {
                   type="text"
                   value={form.accessToken}
                   onChange={(event) => setForm((prev) => ({ ...prev, accessToken: event.target.value }))}
-                  placeholder={editingProfileId ? '留空则不修改 Token' : 'mytermux-...'}
+                  placeholder="留空则不修改 Token"
                   className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-mono text-gray-100"
                 />
 
@@ -389,27 +372,115 @@ export function DaemonHubPage() {
                   />
                 )}
 
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1.5">绑定 daemonId（只读）</label>
+                  <input
+                    type="text"
+                    value={form.daemonId || '暂无在线 daemon'}
+                    readOnly
+                    className="w-full rounded-lg border border-gray-700 bg-gray-800/70 px-3 py-2 text-sm text-gray-400"
+                  />
+                </div>
+
                 <div className="flex items-center gap-2">
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={submitting || !editingProfileId}
                     className="flex-1 rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
                   >
-                    {submitting ? '保存中...' : editingProfileId ? '更新配置' : '创建配置'}
+                    {submitting ? '保存中...' : '保存修改'}
                   </button>
-                  {editingProfileId && (
-                    <button
-                      type="button"
-                      onClick={resetForm}
-                      className="rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-200 hover:border-emerald-500"
-                    >
-                      取消编辑
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    disabled={!editingProfileId}
+                    className="rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-200 hover:border-emerald-500 disabled:opacity-60"
+                  >
+                    重置
+                  </button>
                 </div>
               </form>
             </div>
 
+            <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-4">
+              <h3 className="text-base font-semibold">Daemon Profiles</h3>
+              {profiles.length === 0 ? (
+                <p className="mt-2 text-sm text-gray-500">当前没有在线 daemon，等待 daemon 上线后自动生成 profile。</p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {profiles.map((profile) => {
+                    const matchedOnlineDaemon = profile.daemonId
+                      ? onlineDaemons.find((daemon) => daemon.daemonId === profile.daemonId)
+                      : undefined;
+
+                    return (
+                      <div key={profile.id} className="rounded-xl border border-gray-800 bg-gray-950/60 p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-medium text-gray-100">{profile.name}</p>
+                              {activeProfile?.id === profile.id && (
+                                <span className="rounded border border-emerald-700 bg-emerald-900/30 px-2 py-0.5 text-[10px] text-emerald-300">
+                                  当前使用
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-gray-400 break-all">
+                              {profile.online ? '在线' : '离线'}
+                              {' · '}
+                              daemonId: {profile.daemonId || '未绑定'}
+                              {' · '}
+                              token: {profile.accessTokenMasked || '未设置'}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              默认目录: {profile.defaultCwd || '-'}
+                              {' · '}
+                              默认命令: {profile.defaultCommandMode}
+                              {profile.defaultCommandValue ? ` (${profile.defaultCommandValue})` : ''}
+                            </p>
+                            {matchedOnlineDaemon && (
+                              <p className="mt-1 text-xs text-emerald-300">
+                                对应在线 daemon，客户端连接数: {matchedOnlineDaemon.connectedClients}
+                                {' · '}
+                                最后心跳: {new Date(matchedOnlineDaemon.lastHeartbeat).toLocaleString('zh-CN')}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {profile.online ? (
+                              <button
+                                onClick={() => handleStartEdit(profile)}
+                                className="rounded-lg border border-gray-700 px-2.5 py-1.5 text-xs text-gray-200 hover:border-emerald-500"
+                              >
+                                编辑
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => void handleDeleteProfile(profile)}
+                                disabled={deletingProfileId === profile.id}
+                                className="rounded-lg border border-red-800 px-2.5 py-1.5 text-xs text-red-300 hover:bg-red-900/30 disabled:opacity-60"
+                              >
+                                {deletingProfileId === profile.id ? '删除中...' : '删除'}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => void handleConnectProfile(profile)}
+                              disabled={isConnecting || actionProfileId === profile.id || !profile.hasToken || !profile.online}
+                              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
+                            >
+                              连接
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="space-y-4">
             <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-4 md:p-5">
               <h2 className="text-lg font-semibold">Web 快捷键配置</h2>
               <p className="mt-1 text-xs text-gray-500">

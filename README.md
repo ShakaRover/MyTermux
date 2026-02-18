@@ -53,9 +53,9 @@ pnpm --filter @mytermux/web dev
 4. 打开 `http://localhost:5173`
 
 5. 登录 Web 管理中心后：
-- 新建/编辑 daemon profile（含 token、默认目录、默认命令）
-- 绑定在线 daemon
-- 点击“连接”进入 Dashboard
+- 在线 daemon 自动生成 profile，可编辑配置（token、默认目录、默认命令）
+- 离线 profile 会保留，支持手动删除
+- 点击“连接”进入会话页面
 
 ## 常用命令
 

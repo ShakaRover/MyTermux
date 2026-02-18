@@ -150,34 +150,29 @@ MyTermux 协议分为两层：
 }
 ```
 
-#### `POST /api/daemon-profiles`
+规则：
 
-请求：
-
-```json
-{
-  "name": "MacBook",
-  "accessToken": "mytermux-...",
-  "daemonId": null,
-  "defaultCwd": "/Users/me/project",
-  "defaultCommandMode": "zsh",
-  "defaultCommandValue": null
-}
-```
+- `daemonId` 与 profile 一一对应
+- 新在线 `daemonId` 会自动生成默认 profile
+- daemon 离线后 profile 会保留
+- 不支持手动新增/绑定 profile
+- 仅支持手动删除离线 profile
 
 #### `PATCH /api/daemon-profiles/:id`
 
-- 与创建字段一致，按需传递
+- 仅允许编辑在线 daemon 的 profile
+- `daemonId` 不可修改
+- 可更新字段：`name`、`accessToken`、`defaultCwd`、`defaultCommandMode`、`defaultCommandValue`
 
+#### `DELETE /api/daemon-profiles/:id`
+
+- 仅允许删除离线 daemon 的 profile
+- 在线 daemon 的 profile 删除会返回 `409`
+
+#### `POST /api/daemon-profiles`
 #### `POST /api/daemon-profiles/:id/bind`
 
-请求：
-
-```json
-{
-  "daemonId": "daemon-1"
-}
-```
+- 均已禁用（返回 `405`）
 
 ### 2.4 Web 偏好配置
 

@@ -7,7 +7,7 @@ MyTermux 当前推荐流程：
 1. 启动 relay（Web 登录入口 + 中继）
 2. 启动 daemon（提供 Access Token）
 3. 浏览器登录 Web 管理中心
-4. 在 Web 中配置/绑定 daemon profile
+4. 在 Web 中编辑 daemon profile 配置
 5. 连接 daemon 并进入终端会话
 
 ## 2. 前置要求
@@ -62,9 +62,10 @@ pnpm --filter @mytermux/web dev
 
 登录后进入 `/daemons`：
 
-1. 新建 profile（名称、token、默认目录、默认命令）
-2. 将 profile 绑定到在线 daemon（可选）
-3. 点击“连接”进入 `/sessions`
+1. 在线 daemon 会自动生成默认 profile（`daemonId` 与 profile 一一对应）
+2. 在线 profile 支持编辑（名称、token、默认目录、默认命令）
+3. daemon 离线后 profile 会保留，可手动删除离线 profile
+4. 点击“连接”进入 `/sessions`
 
 默认命令支持：
 
@@ -116,7 +117,7 @@ pnpm --filter @mytermux/relay status
 ### 8.2 Daemon 在线但无法连接
 
 - 确认 profile 已配置有效 token
-- 在 `/daemons` 中重新绑定 daemonId
+- 在 `/daemons` 中确认 profile 对应 daemonId 与在线 daemon 一致
 - 确认 token 前缀为 `mytermux-`
 
 ### 8.3 终端无输出或频繁断开

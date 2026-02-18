@@ -341,6 +341,29 @@ export class RelayStorage {
     return this.mapDaemonProfile(row);
   }
 
+  getDaemonProfileByDaemonId(daemonId: string): DaemonProfile | null {
+    const row = this.db.prepare(`
+      SELECT id, name, daemon_id, access_token_encrypted, default_cwd, default_command_mode,
+             default_command_value, created_at, updated_at
+      FROM daemon_profiles
+      WHERE daemon_id = ?
+      LIMIT 1
+    `).get(daemonId) as {
+      id: string;
+      name: string;
+      daemon_id: string | null;
+      access_token_encrypted: string | null;
+      default_cwd: string | null;
+      default_command_mode: DefaultCommandMode;
+      default_command_value: string | null;
+      created_at: number;
+      updated_at: number;
+    } | undefined;
+
+    if (!row) return null;
+    return this.mapDaemonProfile(row);
+  }
+
   createDaemonProfile(profileId: string, input: DaemonProfileInput): DaemonProfile {
     const now = Date.now();
     const encrypted = input.accessToken ? encryptToken(input.accessToken, this.aesKey) : null;
@@ -434,6 +457,15 @@ export class RelayStorage {
       throw new Error('绑定 daemon 失败');
     }
     return updated;
+  }
+
+  deleteDaemonProfile(profileId: string): void {
+    const existing = this.getDaemonProfile(profileId);
+    if (!existing) {
+      throw new Error('daemon 配置不存在');
+    }
+
+    this.db.prepare('DELETE FROM daemon_profiles WHERE id = ?').run(profileId);
   }
 
   getDaemonProfileToken(profileId: string): string | null {
@@ -542,4 +574,3 @@ export class RelayStorage {
     };
   }
 }
-

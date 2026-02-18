@@ -13,7 +13,7 @@ MyTermux 已切换为：
 
 1. Relay 提供 Web Auth、Daemon 管理 API、ws-ticket、WebSocket 中继
 2. Daemon 向 Relay 注册并提供 Access Token
-3. Web 登录后创建/编辑 profile，申请 ws-ticket，连接 daemon
+3. Web 登录后按在线 daemon 自动生成 profile；在线可编辑，离线 profile 保留并支持手动删除
 4. 应用层会话消息走 E2E 加密
 
 ## 3. 目录结构
@@ -68,4 +68,4 @@ pnpm turbo run clean
 
 - 登录问题：检查 `RELAY_ADMIN_*`、`RELAY_WEB_MASTER_KEY`、`relay.db`
 - ws 连接问题：先看 `/api/ws-ticket` 再看 `/ws` 日志
-- daemon 连接问题：检查 profile token、daemon 在线状态与绑定关系
+- daemon 连接问题：检查 profile token 与 daemon 在线状态
