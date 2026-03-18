@@ -50,7 +50,7 @@ export interface ConnectionStoreActions {
 
 function getDefaultRelayUrl(): string {
   if (typeof window === 'undefined') {
-    return 'ws://localhost:3000/ws';
+    return 'ws://127.0.0.1:62200/ws';
   }
 
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';

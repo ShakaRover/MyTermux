@@ -264,7 +264,7 @@ export function buildWsUrl(relayUrl: string, ticket: string): string {
   }
 
   if (typeof window === 'undefined') {
-    return withTicket(`ws://localhost:3000/ws`);
+    return withTicket(`ws://127.0.0.1:62200/ws`);
   }
 
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';

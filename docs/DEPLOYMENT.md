@@ -50,12 +50,12 @@ node -e "const {randomBytes,scryptSync}=require('node:crypto');const p=process.a
 
 ## 3.3 启动 Relay
 
-说明：生产场景下 Relay 监听内网明文端口（如 `127.0.0.1:3000`），由 Nginx 负责证书与 TLS。
+说明：生产场景下 Relay 监听内网明文端口（默认 `127.0.0.1:62200`），由 Nginx 负责证书与 TLS。
 
 前台验证：
 
 ```bash
-pnpm --filter @mytermux/relay start:fg -- --host 0.0.0.0 --port 3000
+pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
 ```
 
 后台运行：
@@ -67,7 +67,7 @@ pnpm --filter @mytermux/relay start
 健康检查：
 
 ```bash
-curl http://127.0.0.1:3000/health
+curl http://127.0.0.1:62200/health
 ```
 
 ## 4. Daemon 部署
@@ -75,7 +75,7 @@ curl http://127.0.0.1:3000/health
 在被控主机运行：
 
 ```bash
-pnpm --filter @mytermux/daemon start -- --relay ws://<relay-host>:3000 --daemon-link-token '<daemon-link-token>'
+pnpm --filter @mytermux/daemon start -- --relay ws://<relay-host>:62200 --daemon-link-token '<daemon-link-token>'
 ```
 
 查看 `MYTERMUX_DAEMON_TOKEN`：
@@ -83,6 +83,8 @@ pnpm --filter @mytermux/daemon start -- --relay ws://<relay-host>:3000 --daemon-
 ```bash
 pnpm --filter @mytermux/daemon token
 ```
+
+Daemon 默认本地监听：`http://127.0.0.1:62300`
 
 ## 5. Web 部署
 
@@ -113,14 +115,14 @@ server {
   }
 
   location /api {
-    proxy_pass http://127.0.0.1:3000/api;
+    proxy_pass http://127.0.0.1:62200/api;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   }
 
   location /ws {
-    proxy_pass http://127.0.0.1:3000/ws;
+    proxy_pass http://127.0.0.1:62200/ws;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
@@ -129,7 +131,7 @@ server {
   }
 
   location /health {
-    proxy_pass http://127.0.0.1:3000/health;
+    proxy_pass http://127.0.0.1:62200/health;
   }
 }
 ```
@@ -146,7 +148,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/srv/mytermux
-ExecStart=/usr/bin/pnpm --filter @mytermux/relay start:fg -- --host 0.0.0.0 --port 3000
+ExecStart=/usr/bin/pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
 Restart=always
 RestartSec=3
 User=mytermux
@@ -171,7 +173,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/srv/mytermux
-ExecStart=/usr/bin/pnpm --filter @mytermux/daemon start:fg -- --relay wss://mytermux.example.com/ws
+ExecStart=/usr/bin/pnpm --filter @mytermux/daemon start:fg -- --relay wss://mytermux.example.com/ws --listen-host 127.0.0.1 --listen-port 62300
 Restart=always
 RestartSec=3
 User=mytermux

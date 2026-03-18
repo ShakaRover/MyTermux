@@ -29,13 +29,14 @@ pnpm turbo run build
 ### 3.2 启动 relay
 
 ```bash
-pnpm --filter @mytermux/relay start:fg
+pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
 ```
 
 默认地址：
 
-- HTTP: `http://localhost:3000`
-- WebSocket: `ws://localhost:3000/ws`
+- Web Client: `http://127.0.0.1:62100`
+- Relay HTTP: `http://127.0.0.1:62200`
+- Relay WebSocket: `ws://127.0.0.1:62200/ws`
 
 说明：本地运行不需要证书，不要配置 `TLS_CERT` / `TLS_KEY`。
 
@@ -47,6 +48,10 @@ pnpm --filter @mytermux/relay start:fg
 pnpm --filter @mytermux/daemon start:fg -- --daemon-link-token '<daemon-link-token>'
 ```
 
+Daemon 默认监听：
+
+- 本地状态地址：`http://127.0.0.1:62300`
+
 查看完整 `MYTERMUX_DAEMON_TOKEN`：
 
 ```bash
@@ -56,10 +61,10 @@ pnpm --filter @mytermux/daemon token
 ### 3.4 启动 Web
 
 ```bash
-pnpm --filter @mytermux/web dev
+pnpm --filter @mytermux/web dev -- --host 127.0.0.1 --port 62100
 ```
 
-浏览器打开 `http://localhost:5173`，进入 `/login` 登录。
+浏览器打开 `http://127.0.0.1:62100`，进入 `/login` 登录。
 
 ## 4. Daemon 管理中心
 

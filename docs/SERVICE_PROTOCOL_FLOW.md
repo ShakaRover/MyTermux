@@ -3,6 +3,7 @@
 本文聚焦 Relay / Web / Daemon 的关键协议链路，便于排查认证与路由问题。
 说明：`Web 管理端` 与 `Web Client` 在实现上是同一个 Web 前端，这里仅按阶段区分职责。
 部署约束：本地/测试统一无证书（HTTP + WS）；生产必须走 Nginx 反向代理并启用证书（HTTPS + WSS）。
+默认地址：Web Client `127.0.0.1:62100`，Relay `127.0.0.1:62200`，Daemon 本地状态监听 `127.0.0.1:62300`。
 
 ## 1. 总体链路（HTTP + WebSocket）
 

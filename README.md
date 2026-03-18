@@ -36,8 +36,10 @@ Token 约定：
 
 本地运行/联调/测试统一走**无证书模型**：
 
-- Relay: `http://127.0.0.1:3000`
-- WebSocket: `ws://127.0.0.1:3000/ws`
+- Web Client: `http://127.0.0.1:62100`
+- Relay: `http://127.0.0.1:62200`
+- Relay WebSocket: `ws://127.0.0.1:62200/ws`
+- Daemon 本地状态监听: `http://127.0.0.1:62300`
 - 不配置 `TLS_CERT` / `TLS_KEY`
 - 不启用 `VITE_HTTPS`
 
@@ -85,7 +87,7 @@ pnpm --filter @mytermux/daemon start:fg -- --daemon-link-token 'your-daemon-link
 pnpm --filter @mytermux/web dev
 ```
 
-5. 打开 `http://localhost:5173`
+5. 打开 `http://127.0.0.1:62100`
 
 6. 登录 Web 管理中心后：
 - 在线 daemon 自动生成 profile，可编辑配置（token、默认目录、默认命令）

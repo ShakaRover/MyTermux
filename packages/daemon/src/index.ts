@@ -139,10 +139,12 @@ program
 program
   .command('start')
   .description('启动守护进程')
-  .option('-r, --relay <url>', '中继服务器地址', process.env['RELAY_URL'] || 'ws://localhost:3000')
+  .option('-r, --relay <url>', '中继服务器地址', process.env['RELAY_URL'] || 'ws://127.0.0.1:62200')
+  .option('--listen-host <host>', '本地状态监听地址', process.env['DAEMON_HOST'] || '127.0.0.1')
+  .option('--listen-port <port>', '本地状态监听端口', process.env['DAEMON_PORT'] || '62300')
   .option('--daemon-link-token <token>', 'daemon 连接 Relay 链路 token（默认读取 MYTERMUX_DAEMON_LINK_TOKEN）', process.env['MYTERMUX_DAEMON_LINK_TOKEN'] || '')
   .option('-f, --foreground', '前台运行（不作为守护进程）', false)
-  .action(async (options: { relay: string; foreground: boolean; daemonLinkToken: string }) => {
+  .action(async (options: { relay: string; foreground: boolean; daemonLinkToken: string; listenHost: string; listenPort: string }) => {
     // 检查是否已有进程在运行
     const existingPid = await readPidFile();
     if (existingPid && isProcessRunning(existingPid)) {
@@ -157,6 +159,8 @@ program
       if (options.daemonLinkToken.trim()) {
         args.push('--daemon-link-token', options.daemonLinkToken.trim());
       }
+      args.push('--listen-host', options.listenHost.trim() || '127.0.0.1');
+      args.push('--listen-port', options.listenPort.trim() || '62300');
       const logFile = path.join(CONFIG_DIR, 'daemon.log');
 
       await ensureConfigDir();
@@ -216,10 +220,16 @@ program
 
     // 前台模式：直接在当前进程运行
     console.log(`启动守护进程，连接到中继服务器: ${options.relay}`);
+    const listenHost = options.listenHost.trim() || '127.0.0.1';
+    const parsedListenPort = parseInt(options.listenPort, 10);
+    const listenPort = Number.isFinite(parsedListenPort) ? parsedListenPort : 62300;
+    console.log(`本地状态监听地址: http://${listenHost}:${listenPort}`);
 
     const daemonLinkToken = options.daemonLinkToken.trim();
     const daemon = new Daemon({
       relayUrl: options.relay,
+      listenHost,
+      listenPort,
       ...(daemonLinkToken ? { daemonLinkToken } : {}),
     });
 
@@ -351,6 +361,9 @@ program
       console.log(`设备 ID: ${status['deviceId'] ?? '未知'}`);
       console.log(`活跃会话: ${status['sessionCount'] ?? 0}`);
       console.log(`已认证客户端: ${status['authenticatedClientsCount'] ?? 0}`);
+      if (status['listenHost'] && status['listenPort']) {
+        console.log(`本地监听: http://${status['listenHost']}:${status['listenPort']}`);
+      }
     }
   });
 

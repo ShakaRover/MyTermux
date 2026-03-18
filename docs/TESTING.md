@@ -30,14 +30,14 @@ pnpm --filter @mytermux/web test
 ### 2.1 启动组件
 
 ```bash
-pnpm --filter @mytermux/relay start:fg
+pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
 pnpm --filter @mytermux/daemon start:fg
-pnpm --filter @mytermux/web dev
+pnpm --filter @mytermux/web dev -- --host 127.0.0.1 --port 62100
 ```
 
 ### 2.2 Web 登录与管理
 
-1. 打开 `http://localhost:5173/login`
+1. 打开 `http://127.0.0.1:62100/login`
 2. 使用 `MYTERMUX_WEB_TOKEN`（或兼容模式管理员账号）登录
 3. 在 `/daemons` 验证在线 daemon 自动生成 profile
 4. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）

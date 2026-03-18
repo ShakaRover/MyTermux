@@ -45,10 +45,17 @@ pnpm turbo run build
 启动：
 
 ```bash
-pnpm --filter @mytermux/relay start:fg
+pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
 pnpm --filter @mytermux/daemon start:fg
-pnpm --filter @mytermux/web dev
+pnpm --filter @mytermux/web dev -- --host 127.0.0.1 --port 62100
 ```
+
+默认地址：
+
+- Web Client: `http://127.0.0.1:62100`
+- Relay: `http://127.0.0.1:62200`
+- Relay WebSocket: `ws://127.0.0.1:62200/ws`
+- Daemon 本地状态监听: `http://127.0.0.1:62300`
 
 ## 5. 协议与类型关键点
 

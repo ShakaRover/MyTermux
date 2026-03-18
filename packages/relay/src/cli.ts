@@ -32,10 +32,10 @@ const PID_FILE = path.join(CONFIG_DIR, 'relay.pid');
 const LOG_FILE = path.join(CONFIG_DIR, 'relay.log');
 
 /** 默认端口 */
-const DEFAULT_PORT = 3000;
+const DEFAULT_PORT = 62200;
 
 /** 默认监听地址 */
-const DEFAULT_HOST = '0.0.0.0';
+const DEFAULT_HOST = '127.0.0.1';
 
 // ============================================================================
 // 工具函数

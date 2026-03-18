@@ -14,13 +14,13 @@ describe('buildWsUrl', () => {
   });
 
   it('should append ticket to absolute ws url', () => {
-    const url = buildWsUrl('ws://localhost:3000/ws', 'ticket-123');
-    expect(url).toBe('ws://localhost:3000/ws?ticket=ticket-123');
+    const url = buildWsUrl('ws://127.0.0.1:62200/ws', 'ticket-123');
+    expect(url).toBe('ws://127.0.0.1:62200/ws?ticket=ticket-123');
   });
 
   it('should append ticket with ampersand when query exists', () => {
-    const url = buildWsUrl('ws://localhost:3000/ws?foo=bar', 'ticket-123');
-    expect(url).toBe('ws://localhost:3000/ws?foo=bar&ticket=ticket-123');
+    const url = buildWsUrl('ws://127.0.0.1:62200/ws?foo=bar', 'ticket-123');
+    expect(url).toBe('ws://127.0.0.1:62200/ws?foo=bar&ticket=ticket-123');
   });
 
   it('should resolve relative path with current window host', () => {

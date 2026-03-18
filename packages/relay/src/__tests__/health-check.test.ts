@@ -56,22 +56,21 @@ describe('health-check utils', () => {
         .mockResolvedValueOnce(createMockResponse(true, { status: 'ok' }));
       vi.stubGlobal('fetch', fetchMock);
 
-      const result = await fetchHealthStatus('0.0.0.0', 3000);
+      const result = await fetchHealthStatus('0.0.0.0', 62200);
 
       expect(result).toEqual({ status: 'ok' });
-      expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://127.0.0.1:3000/health');
-      expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:3000/health');
+      expect(fetchMock).toHaveBeenNthCalledWith(1, 'http://127.0.0.1:62200/health');
+      expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://localhost:62200/health');
     });
 
     it('should return null when all probes fail', async () => {
       const fetchMock = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
       vi.stubGlobal('fetch', fetchMock);
 
-      const result = await fetchHealthStatus('0.0.0.0', 3000);
+      const result = await fetchHealthStatus('0.0.0.0', 62200);
 
       expect(result).toBeNull();
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
 });
-

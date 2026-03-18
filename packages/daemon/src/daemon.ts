@@ -6,6 +6,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { createServer, type Server as HttpServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type {
   TransportMessage,
   AppMessage,
@@ -47,6 +48,10 @@ export interface DaemonOptions {
   relayUrl: string;
   /** daemon 连接 Relay 链路 token（MYTERMUX_DAEMON_LINK_TOKEN） */
   daemonLinkToken?: string;
+  /** daemon 本地监听地址（默认 127.0.0.1） */
+  listenHost?: string;
+  /** daemon 本地监听端口（默认 62300） */
+  listenPort?: number;
 }
 
 /** Daemon 事件 */
@@ -92,6 +97,8 @@ export class Daemon extends EventEmitter {
   private _isRunning = false;
   /** 当前在线的客户端 ID 集合（仅收到 token_ack 成功且未断线的） */
   private onlineClients = new Set<string>();
+  /** 本地状态监听服务 */
+  private localStatusServer: HttpServer | null = null;
 
   constructor(options: DaemonOptions) {
     super();
@@ -135,9 +142,15 @@ export class Daemon extends EventEmitter {
     this.setupWsClientListeners();
     this.setupSessionManagerListeners();
     this.setupAuthManagerListeners();
+    await this.startLocalStatusServer();
 
     // 连接到中继服务器
-    await this.wsClient.connect();
+    try {
+      await this.wsClient.connect();
+    } catch (error) {
+      this.stopLocalStatusServer();
+      throw error;
+    }
 
     this._isRunning = true;
     this.emit('started');
@@ -162,6 +175,7 @@ export class Daemon extends EventEmitter {
       this.wsClient.disconnect();
       this.wsClient = null;
     }
+    this.stopLocalStatusServer();
 
     this._isRunning = false;
     this.emit('stopped');
@@ -193,6 +207,8 @@ export class Daemon extends EventEmitter {
     sessionCount: number;
     authenticatedClientsCount: number;
     onlineClientsCount: number;
+    listenHost: string;
+    listenPort: number;
   } {
     return {
       isRunning: this._isRunning,
@@ -201,6 +217,8 @@ export class Daemon extends EventEmitter {
       sessionCount: this.sessionManager.sessionCount,
       authenticatedClientsCount: this.authManager.getAuthenticatedClients().length,
       onlineClientsCount: this.onlineClients.size,
+      listenHost: this.options.listenHost?.trim() || '127.0.0.1',
+      listenPort: this.options.listenPort ?? 62300,
     };
   }
 
@@ -220,6 +238,62 @@ export class Daemon extends EventEmitter {
    */
   private toError(error: unknown): Error {
     return error instanceof Error ? error : new Error(String(error));
+  }
+
+  /**
+   * 启动 daemon 本地状态监听服务
+   */
+  private async startLocalStatusServer(): Promise<void> {
+    if (this.localStatusServer) {
+      return;
+    }
+
+    const host = this.options.listenHost?.trim() || '127.0.0.1';
+    const port = this.options.listenPort ?? 62300;
+    const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+      if (req.url === '/health') {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({
+          status: 'ok',
+          timestamp: Date.now(),
+          daemon: this.getStatus(),
+        }));
+        return;
+      }
+
+      res.statusCode = 200;
+      res.setHeader('content-type', 'text/plain; charset=utf-8');
+      res.end('MyTermux Daemon is running\n');
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', (error) => {
+        reject(error);
+      });
+      server.listen(port, host, () => {
+        server.removeAllListeners('error');
+        resolve();
+      });
+    });
+
+    this.localStatusServer = server;
+    console.log(`[Daemon] 本地状态监听已启动: http://${host}:${port}`);
+  }
+
+  /**
+   * 停止 daemon 本地状态监听服务
+   */
+  private stopLocalStatusServer(): void {
+    if (!this.localStatusServer) {
+      return;
+    }
+
+    const server = this.localStatusServer;
+    this.localStatusServer = null;
+    server.close(() => {
+      console.log('[Daemon] 本地状态监听已关闭');
+    });
   }
 
   /**

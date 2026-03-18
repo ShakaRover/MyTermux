@@ -7,7 +7,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 const enableHttps = process.env.VITE_HTTPS === 'true';
 
 // Relay 服务器地址（用于 WebSocket 代理）
-const relayTarget = process.env.VITE_RELAY_URL || 'ws://localhost:3000/ws';
+const relayTarget = process.env.VITE_RELAY_URL || 'ws://127.0.0.1:62200/ws';
 
 // 从 ws(s)://host:port/path 中提取 http(s)://host:port
 function extractProxyTarget(wsUrl: string): string {
@@ -27,8 +27,8 @@ export default defineConfig({
   ],
   server: {
     // 支持通过环境变量配置 host 和 port
-    host: process.env.VITE_HOST || 'localhost',
-    port: Number(process.env.VITE_PORT) || 5173,
+    host: process.env.VITE_HOST || '127.0.0.1',
+    port: Number(process.env.VITE_PORT) || 62100,
     // 始终代理 /ws 与 /api，保证本地开发使用同域 Cookie 会话
     proxy: {
       '/ws': {

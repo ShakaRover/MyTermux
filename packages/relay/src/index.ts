@@ -8,8 +8,8 @@ import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import { initializeRelayRuntime } from './runtime.js';
 
 // 从环境变量获取端口和地址
-const port = Number(process.env['PORT']) || 3000;
-const hostname = process.env['HOST'] || '0.0.0.0';
+const port = Number(process.env['PORT']) || 62200;
+const hostname = process.env['HOST'] || '127.0.0.1';
 
 // 初始化核心组件
 const runtime = initializeRelayRuntime();
