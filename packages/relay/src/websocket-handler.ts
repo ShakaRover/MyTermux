@@ -236,7 +236,16 @@ export class WebSocketHandler {
 
     // 使用 Access Token 验证并建立认证关系
     const context = this.wsContexts.get(ws);
-    const accessToken = payload.accessToken ?? context?.ticketPayload?.accessToken;
+    const ticketAccessToken = context?.ticketPayload?.accessToken;
+    if (ticketAccessToken && payload.accessToken && payload.accessToken !== ticketAccessToken) {
+      this.sendError(ws, 'TOKEN_MISMATCH', 'Access Token 与 ws ticket 不一致');
+      this.deviceRegistry.unregisterDevice(clientId);
+      this.wsToDeviceId.delete(ws);
+      ws.close(4002, 'Access Token 与 ws ticket 不一致');
+      return;
+    }
+
+    const accessToken = ticketAccessToken ?? payload.accessToken;
 
     if (!accessToken) {
       this.sendError(ws, 'TOKEN_REQUIRED', '缺少 Access Token');
@@ -296,6 +305,10 @@ export class WebSocketHandler {
    * @param message 心跳消息
    */
   private handleHeartbeat(_ws: WebSocket, message: TransportMessage): void {
+    if (!this.ensureBoundSender(_ws, message.from)) {
+      return;
+    }
+
     const deviceId = message.from;
 
     // 更新心跳时间
@@ -312,6 +325,10 @@ export class WebSocketHandler {
    * @param message 传输层消息
    */
   private handleRoutedMessage(ws: WebSocket, message: TransportMessage): void {
+    if (!this.ensureBoundSender(ws, message.from)) {
+      return;
+    }
+
     const from = message.from;
     const to = message.to;
 
@@ -427,6 +444,26 @@ export class WebSocketHandler {
 
     context.clientTicketValidated = true;
     context.ticketPayload = consumed;
+    return true;
+  }
+
+  /**
+   * 校验消息来源是否与当前 WebSocket 绑定设备一致
+   */
+  private ensureBoundSender(ws: WebSocket, from: string): boolean {
+    const boundDeviceId = this.wsToDeviceId.get(ws);
+    if (!boundDeviceId) {
+      this.sendError(ws, 'UNREGISTERED_CONNECTION', '连接尚未完成注册或认证');
+      ws.close(4004, '连接尚未完成注册或认证');
+      return false;
+    }
+
+    if (boundDeviceId !== from) {
+      this.sendError(ws, 'SENDER_MISMATCH', '消息来源与连接身份不一致');
+      ws.close(4005, '消息来源与连接身份不一致');
+      return false;
+    }
+
     return true;
   }
 

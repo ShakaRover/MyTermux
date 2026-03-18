@@ -88,10 +88,27 @@ function sendTokenAuthMessage(
   ws: import('ws').WebSocket,
   clientId: string,
   publicKey: string,
-  accessToken: string,
+  accessToken?: string,
 ) {
-  const payload = JSON.stringify({ deviceType: 'client', publicKey, accessToken });
+  const payload = JSON.stringify({ deviceType: 'client', publicKey, ...(accessToken ? { accessToken } : {}) });
   const message = createTransportMessage('token_auth', clientId, payload);
+  (ws as unknown as EventEmitter).emit('message', Buffer.from(JSON.stringify(message)));
+}
+
+/** 模拟发送普通路由消息 */
+function sendRoutedMessage(
+  ws: import('ws').WebSocket,
+  from: string,
+  to: string,
+  payload = 'encrypted-payload',
+) {
+  const message = createTransportMessage('message', from, payload, to);
+  (ws as unknown as EventEmitter).emit('message', Buffer.from(JSON.stringify(message)));
+}
+
+/** 模拟发送心跳消息 */
+function sendHeartbeatMessage(ws: import('ws').WebSocket, from: string) {
+  const message = createTransportMessage('heartbeat', from, '');
   (ws as unknown as EventEmitter).emit('message', Buffer.from(JSON.stringify(message)));
 }
 
@@ -349,7 +366,7 @@ describe('WebSocketHandler', () => {
       vi.mocked(registry.getWebSocket).mockReturnValue(undefined as unknown as import('ws').WebSocket);
       vi.mocked(registry.validateAccessToken).mockReturnValue(null);
 
-      sendTokenAuthMessage(ws, 'client-1', 'pk-c1', 'invalid-token');
+      sendTokenAuthMessage(ws, 'client-1', 'pk-c1');
 
       // 应发送失败 token_ack
       const sentData = JSON.parse((ws.send as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string);
@@ -359,6 +376,60 @@ describe('WebSocketHandler', () => {
       // 应注销设备并关闭连接
       expect(registry.unregisterDevice).toHaveBeenCalledWith('client-1');
       expect(ws.close).toHaveBeenCalledWith(4001, 'Token 认证失败');
+    });
+
+    it('ws-ticket 与 payload token 不一致时应拒绝认证并关闭连接', () => {
+      const ws = createMockWs();
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
+
+      vi.mocked(registry.getWebSocket).mockReturnValue(undefined as unknown as import('ws').WebSocket);
+      vi.mocked(registry.validateAccessToken).mockReturnValue('daemon-1');
+
+      sendTokenAuthMessage(ws, 'client-1', 'pk-c1', 'another-token');
+
+      expect(registry.validateAccessToken).not.toHaveBeenCalled();
+      expect(registry.unregisterDevice).toHaveBeenCalledWith('client-1');
+      expect(ws.close).toHaveBeenCalledWith(4002, 'Access Token 与 ws ticket 不一致');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 连接身份绑定校验（防止伪造 from）
+  // --------------------------------------------------------------------------
+
+  describe('sender binding', () => {
+    it('未注册连接发送 message 时应拒绝并关闭连接', () => {
+      const ws = createMockWs();
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
+
+      sendRoutedMessage(ws, 'client-1', 'daemon-1');
+
+      expect(router.routeMessage).not.toHaveBeenCalled();
+      expect(ws.close).toHaveBeenCalledWith(4004, '连接尚未完成注册或认证');
+    });
+
+    it('已注册连接伪造 from 发送 message 时应拒绝并关闭连接', () => {
+      const ws = createMockWs();
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
+      sendRegisterMessage(ws, 'client-1', 'client', 'pk-1');
+
+      vi.mocked(router.routeMessage).mockClear();
+      sendRoutedMessage(ws, 'client-2', 'daemon-1');
+
+      expect(router.routeMessage).not.toHaveBeenCalled();
+      expect(ws.close).toHaveBeenCalledWith(4005, '消息来源与连接身份不一致');
+    });
+
+    it('已注册连接伪造 from 发送 heartbeat 时应拒绝并关闭连接', () => {
+      const ws = createMockWs();
+      handler.handleConnection(ws, '/ws?ticket=ticket-1');
+      sendRegisterMessage(ws, 'client-1', 'client', 'pk-1');
+
+      vi.mocked(registry.updateHeartbeat).mockClear();
+      sendHeartbeatMessage(ws, 'client-2');
+
+      expect(registry.updateHeartbeat).not.toHaveBeenCalled();
+      expect(ws.close).toHaveBeenCalledWith(4005, '消息来源与连接身份不一致');
     });
   });
 
