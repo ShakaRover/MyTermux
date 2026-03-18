@@ -29,8 +29,6 @@ cp .env.example .env
 
 编辑 `.env`，至少填写：
 
-- `RELAY_ADMIN_USERNAME`
-- `RELAY_ADMIN_PASSWORD_HASH`
 - `MYTERMUX_WEB_LINK_TOKEN`
 - `MYTERMUX_DAEMON_LINK_TOKEN`
 - `RELAY_WEB_MASTER_KEY`
@@ -49,7 +47,7 @@ pnpm start:local:test
 
 说明：本地运行不需要证书，不要配置 `TLS_CERT` / `TLS_KEY`。
 
-> Web 管理端统一使用管理员账号密码登录。
+> Web 管理端默认账号密码为 `admin` / `mytermux`，首次登录后必须修改账号和密码。
 
 ### 3.3 分别启动（可选）
 
@@ -70,6 +68,11 @@ pnpm --filter @mytermux/daemon token
 ```
 
 浏览器打开 `http://127.0.0.1:62100`，进入 `/login` 登录。
+
+登录成功后可在 `/daemons` 的“Relay 连接配置”中设置：
+
+- Relay WebSocket 地址
+- `MYTERMUX_WEB_LINK_TOKEN`
 
 ## 4. Daemon 管理中心
 
@@ -124,7 +127,8 @@ pnpm --filter @mytermux/relay status
 
 ### 8.1 Relay 状态正常但 Web 登录失败
 
-- 优先检查 `RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH` 是否正确
+- 优先确认是否使用默认账号密码 `admin` / `mytermux`
+- 若是首次登录，必须先完成账号与密码修改
 - 查看 `relay.log`
 
 ### 8.2 Daemon 在线但无法连接

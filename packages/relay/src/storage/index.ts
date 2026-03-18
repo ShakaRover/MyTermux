@@ -88,6 +88,7 @@ export class RelayStorage {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         username TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
+        must_change_password INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -134,15 +135,22 @@ export class RelayStorage {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         shortcuts_json TEXT NOT NULL,
         common_chars_json TEXT NOT NULL,
+        relay_url TEXT,
+        web_link_token TEXT,
         updated_at INTEGER NOT NULL
       );
     `);
 
+    // 兼容旧版本：补齐新增列
+    this.ensureColumnExists('web_admin', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumnExists('web_preferences', 'relay_url', 'TEXT');
+    this.ensureColumnExists('web_preferences', 'web_link_token', 'TEXT');
+
     // 初始化默认配置
     const now = Date.now();
     this.db.prepare(`
-      INSERT INTO web_preferences (id, shortcuts_json, common_chars_json, updated_at)
-      VALUES (1, ?, ?, ?)
+      INSERT INTO web_preferences (id, shortcuts_json, common_chars_json, relay_url, web_link_token, updated_at)
+      VALUES (1, ?, ?, NULL, NULL, ?)
       ON CONFLICT(id) DO NOTHING
     `).run(
       JSON.stringify(DEFAULT_WEB_SHORTCUTS),
@@ -155,31 +163,66 @@ export class RelayStorage {
   // Admin
   // --------------------------------------------------------------------------
 
-  upsertAdmin(username: string, passwordHash: string): void {
+  upsertAdmin(username: string, passwordHash: string, mustChangePassword = false): void {
     const now = Date.now();
     this.db.prepare(`
-      INSERT INTO web_admin (id, username, password_hash, created_at, updated_at)
-      VALUES (1, ?, ?, ?, ?)
+      INSERT INTO web_admin (id, username, password_hash, must_change_password, created_at, updated_at)
+      VALUES (1, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         username = excluded.username,
         password_hash = excluded.password_hash,
+        must_change_password = excluded.must_change_password,
         updated_at = excluded.updated_at
-    `).run(username, passwordHash, now, now);
+    `).run(username, passwordHash, mustChangePassword ? 1 : 0, now, now);
   }
 
-  getAdminByUsername(username: string): { username: string; passwordHash: string } | null {
+  getAdmin(): { username: string; passwordHash: string; mustChangePassword: boolean } | null {
     const row = this.db.prepare(`
-      SELECT username, password_hash
+      SELECT username, password_hash, must_change_password
       FROM web_admin
-      WHERE username = ?
+      WHERE id = 1
       LIMIT 1
-    `).get(username) as { username: string; password_hash: string } | undefined;
+    `).get() as {
+      username: string;
+      password_hash: string;
+      must_change_password: number;
+    } | undefined;
 
     if (!row) return null;
     return {
       username: row.username,
       passwordHash: row.password_hash,
+      mustChangePassword: row.must_change_password === 1,
     };
+  }
+
+  getAdminByUsername(username: string): { username: string; passwordHash: string; mustChangePassword: boolean } | null {
+    const row = this.db.prepare(`
+      SELECT username, password_hash, must_change_password
+      FROM web_admin
+      WHERE username = ?
+      LIMIT 1
+    `).get(username) as {
+      username: string;
+      password_hash: string;
+      must_change_password: number;
+    } | undefined;
+
+    if (!row) return null;
+    return {
+      username: row.username,
+      passwordHash: row.password_hash,
+      mustChangePassword: row.must_change_password === 1,
+    };
+  }
+
+  updateAdminCredentials(username: string, passwordHash: string, mustChangePassword = false): void {
+    const now = Date.now();
+    this.db.prepare(`
+      UPDATE web_admin
+      SET username = ?, password_hash = ?, must_change_password = ?, updated_at = ?
+      WHERE id = 1
+    `).run(username, passwordHash, mustChangePassword ? 1 : 0, now);
   }
 
   // --------------------------------------------------------------------------
@@ -488,13 +531,15 @@ export class RelayStorage {
 
   getWebPreferences(): WebPreferences {
     const row = this.db.prepare(`
-      SELECT shortcuts_json, common_chars_json, updated_at
+      SELECT shortcuts_json, common_chars_json, relay_url, web_link_token, updated_at
       FROM web_preferences
       WHERE id = 1
       LIMIT 1
     `).get() as {
       shortcuts_json: string;
       common_chars_json: string;
+      relay_url: string | null;
+      web_link_token: string | null;
       updated_at: number;
     } | undefined;
 
@@ -502,6 +547,8 @@ export class RelayStorage {
       return {
         shortcuts: DEFAULT_WEB_SHORTCUTS,
         commonChars: DEFAULT_COMMON_CHARS,
+        relayUrl: null,
+        webLinkToken: null,
         updatedAt: Date.now(),
       };
     }
@@ -510,29 +557,40 @@ export class RelayStorage {
       return {
         shortcuts: JSON.parse(row.shortcuts_json) as WebShortcut[],
         commonChars: JSON.parse(row.common_chars_json) as string[],
+        relayUrl: row.relay_url,
+        webLinkToken: row.web_link_token,
         updatedAt: row.updated_at,
       };
     } catch {
       return {
         shortcuts: DEFAULT_WEB_SHORTCUTS,
         commonChars: DEFAULT_COMMON_CHARS,
+        relayUrl: row.relay_url,
+        webLinkToken: row.web_link_token,
         updatedAt: row.updated_at,
       };
     }
   }
 
-  upsertWebPreferences(shortcuts: WebShortcut[], commonChars: string[]): WebPreferences {
+  upsertWebPreferences(
+    shortcuts: WebShortcut[],
+    commonChars: string[],
+    relayUrl: string | null,
+    webLinkToken: string | null,
+  ): WebPreferences {
     const updatedAt = Date.now();
     this.db.prepare(`
-      INSERT INTO web_preferences (id, shortcuts_json, common_chars_json, updated_at)
-      VALUES (1, ?, ?, ?)
+      INSERT INTO web_preferences (id, shortcuts_json, common_chars_json, relay_url, web_link_token, updated_at)
+      VALUES (1, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         shortcuts_json = excluded.shortcuts_json,
         common_chars_json = excluded.common_chars_json,
+        relay_url = excluded.relay_url,
+        web_link_token = excluded.web_link_token,
         updated_at = excluded.updated_at
-    `).run(JSON.stringify(shortcuts), JSON.stringify(commonChars), updatedAt);
+    `).run(JSON.stringify(shortcuts), JSON.stringify(commonChars), relayUrl, webLinkToken, updatedAt);
 
-    return { shortcuts, commonChars, updatedAt };
+    return { shortcuts, commonChars, relayUrl, webLinkToken, updatedAt };
   }
 
   // --------------------------------------------------------------------------
@@ -572,5 +630,13 @@ export class RelayStorage {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
+  }
+
+  private ensureColumnExists(tableName: string, columnName: string, columnDef: string): void {
+    const rows = this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+    const exists = rows.some((row) => row.name === columnName);
+    if (!exists) {
+      this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
+    }
   }
 }

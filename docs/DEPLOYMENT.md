@@ -25,8 +25,6 @@ pnpm turbo run build
 
 ## 3.1 必要环境变量
 
-- `RELAY_ADMIN_USERNAME`：Web 管理端登录用户名
-- `RELAY_ADMIN_PASSWORD_HASH`：Web 管理端登录密码哈希（scrypt 格式）
 - `MYTERMUX_WEB_LINK_TOKEN`：Web 前端申请 ws-ticket 前置 token（推荐开启）
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 前置 token（推荐开启）
 - `RELAY_WEB_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
@@ -35,21 +33,13 @@ pnpm turbo run build
 示例：
 
 ```bash
-export RELAY_ADMIN_USERNAME='admin'
-export RELAY_ADMIN_PASSWORD_HASH='<scrypt-hash>'
 export MYTERMUX_WEB_LINK_TOKEN='<web-link-token>'
 export MYTERMUX_DAEMON_LINK_TOKEN='<daemon-link-token>'
 export RELAY_WEB_MASTER_KEY='<32-byte-random-secret>'
 export RELAY_DB_PATH=/var/lib/mytermux/relay.db
 ```
 
-## 3.2 生成密码哈希
-
-```bash
-node -e "const {randomBytes,scryptSync}=require('node:crypto');const p=process.argv[1];const s=randomBytes(16);const N=16384,r=8,pv=1;const h=scryptSync(p,s,64,{N,r,p:pv});console.log(['scrypt',N,r,pv,s.toString('base64'),h.toString('base64')].join('$'));" 'your-password'
-```
-
-## 3.3 启动 Relay
+## 3.2 启动 Relay
 
 说明：生产场景下 Relay 监听内网明文端口（默认 `127.0.0.1:62200`），由 Nginx 负责证书与 TLS。
 
@@ -70,6 +60,12 @@ pnpm --filter @mytermux/relay start
 ```bash
 curl http://127.0.0.1:62200/health
 ```
+
+默认 Web 管理端账号：
+
+- 用户名：`admin`
+- 密码：`mytermux`
+- 首次登录后必须先修改账号和密码，再进行其他管理操作
 
 ## 4. Daemon 部署
 
@@ -154,8 +150,6 @@ Restart=always
 RestartSec=3
 User=mytermux
 Environment=NODE_ENV=production
-Environment=RELAY_ADMIN_USERNAME=admin
-Environment=RELAY_ADMIN_PASSWORD_HASH=<scrypt-hash>
 Environment=MYTERMUX_WEB_LINK_TOKEN=<web-link-token>
 Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
 Environment=RELAY_WEB_MASTER_KEY=<master-key>
@@ -190,7 +184,7 @@ WantedBy=multi-user.target
 
 - 本地开发/测试不要配置证书，统一走 HTTP/WS
 - 生产必须由 Nginx 提供 TLS，外部流量统一走 HTTPS/WSS
-- 不要在生产环境使用默认管理员配置（必须配置 `RELAY_ADMIN_PASSWORD_HASH`）
+- 首次登录后必须立即修改默认管理员账号密码
 - `RELAY_WEB_MASTER_KEY` 必须高强度随机并妥善保管
 - `MYTERMUX_WEB_LINK_TOKEN` / `MYTERMUX_DAEMON_LINK_TOKEN` 仅通过可信渠道分发
 - `MYTERMUX_DAEMON_TOKEN` 仅通过可信渠道分发，并定期轮换

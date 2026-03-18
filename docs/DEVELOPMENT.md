@@ -13,7 +13,7 @@ MyTermux 已切换为：
 
 1. Relay 提供 Web Auth、Daemon 管理 API、ws-ticket、WebSocket 中继
 2. Daemon 向 Relay 注册并提供 `MYTERMUX_DAEMON_TOKEN`
-3. Web 登录后按在线 daemon 自动生成 profile；在线可编辑，离线 profile 保留并支持手动删除
+3. Web 首次登录默认账号 `admin` / `mytermux` 后必须先修改账号密码；随后按在线 daemon 自动生成 profile，并可在 Web 端配置 Relay 地址与 Web Link Token
 4. 应用层会话消息走 E2E 加密
 
 Token 定义：
@@ -40,7 +40,7 @@ packages/
 pnpm install
 pnpm turbo run build
 cp .env.example .env
-# 编辑 .env（至少填写 RELAY_ADMIN_USERNAME / RELAY_ADMIN_PASSWORD_HASH / MYTERMUX_WEB_LINK_TOKEN / MYTERMUX_DAEMON_LINK_TOKEN / RELAY_WEB_MASTER_KEY）
+# 编辑 .env（至少填写 MYTERMUX_WEB_LINK_TOKEN / MYTERMUX_DAEMON_LINK_TOKEN / RELAY_WEB_MASTER_KEY）
 ```
 
 启动：
@@ -108,6 +108,6 @@ pnpm turbo run clean
 
 ## 8. 调试建议
 
-- 登录问题：优先检查 `RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH`、`RELAY_WEB_MASTER_KEY`
+- 登录问题：默认账号密码为 `admin` / `mytermux`；首次登录必须先修改账号和密码，再执行其他管理操作
 - ws 连接问题：先看 `/api/ws-ticket` 再看 `/ws` 日志
 - daemon 连接问题：检查 `MYTERMUX_DAEMON_LINK_TOKEN`、`MYTERMUX_DAEMON_TOKEN` 与 daemon 在线状态

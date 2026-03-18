@@ -28,6 +28,7 @@ export interface ConnectionStoreState {
   sharedKey: CryptoKey | null;
   ws: WebSocket | null;
   relayUrl: string;
+  webLinkToken: string | null;
   activeProfile: DaemonProfile | null;
   appMessageHandler: AppMessageHandler | null;
 }
@@ -42,6 +43,7 @@ export interface ConnectionStoreActions {
   setSharedKey: (sharedKey: CryptoKey | null) => void;
   setWs: (ws: WebSocket | null) => void;
   setRelayUrl: (url: string) => void;
+  setWebLinkToken: (token: string | null) => void;
   setActiveProfile: (profile: DaemonProfile | null) => void;
   setAppMessageHandler: (handler: AppMessageHandler | null) => void;
   disconnect: () => void;
@@ -57,6 +59,11 @@ function getDefaultRelayUrl(): string {
   return `${scheme}://${window.location.host}/ws`;
 }
 
+function getDefaultWebLinkToken(): string | null {
+  const fromEnv = import.meta.env.VITE_MYTERMUX_WEB_LINK_TOKEN?.trim();
+  return fromEnv || null;
+}
+
 const initialState: ConnectionStoreState = {
   state: 'disconnected',
   error: null,
@@ -66,6 +73,7 @@ const initialState: ConnectionStoreState = {
   sharedKey: null,
   ws: null,
   relayUrl: import.meta.env.VITE_RELAY_URL || getDefaultRelayUrl(),
+  webLinkToken: getDefaultWebLinkToken(),
   activeProfile: null,
   appMessageHandler: null,
 };
@@ -82,6 +90,7 @@ export const useConnectionStore = create<ConnectionStoreState & ConnectionStoreA
     setSharedKey: (sharedKey) => set({ sharedKey }),
     setWs: (ws) => set({ ws }),
     setRelayUrl: (relayUrl) => set({ relayUrl }),
+    setWebLinkToken: (webLinkToken) => set({ webLinkToken }),
     setActiveProfile: (activeProfile) => set({ activeProfile }),
     setAppMessageHandler: (appMessageHandler) => set({ appMessageHandler }),
 

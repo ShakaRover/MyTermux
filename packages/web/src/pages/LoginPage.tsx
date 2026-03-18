@@ -16,7 +16,7 @@ export function LoginPage() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      navigate('/daemons', { replace: true });
+      navigate('/', { replace: true });
     }
   }, [status, navigate]);
 
@@ -32,7 +32,7 @@ export function LoginPage() {
 
     try {
       await login(username.trim() || 'admin', password);
-      navigate('/daemons', { replace: true });
+      navigate('/', { replace: true });
     } catch (submitError) {
       console.error('登录失败:', submitError);
     } finally {
@@ -95,7 +95,7 @@ export function LoginPage() {
         </form>
 
         <p className="mt-4 text-xs text-gray-500 text-center">
-          使用 `RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH` 登录。
+          默认账号密码：`admin` / `mytermux`（首次登录后必须修改）。
         </p>
       </div>
     </div>

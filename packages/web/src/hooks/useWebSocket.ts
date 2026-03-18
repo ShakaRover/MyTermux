@@ -165,7 +165,7 @@ export function useWebSocket(): UseWebSocketReturn {
 
     try {
       // 1) 先申请一次性 ws-ticket
-      const wsTicket = await requestWsTicket(profile.id);
+      const wsTicket = await requestWsTicket(profile.id, store.webLinkToken);
 
       // 2) 生成本地密钥对与 deviceId
       const keyPair = await initKeyPair();

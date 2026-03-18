@@ -15,7 +15,7 @@ import type { DeviceRegistry } from './device-registry.js';
 import type { RelayStorage, DaemonProfilePatch } from './storage/index.js';
 import { LoginBruteforceGuard } from './auth/bruteforce.js';
 import { requireCsrfToken, requireWebSession, type AuthVariables, getClientIp } from './auth/middleware.js';
-import { verifyPassword } from './auth/password.js';
+import { hashPassword, verifyPassword } from './auth/password.js';
 import { WebSessionService } from './auth/session.js';
 import type { WsTicketService } from './auth/ws-ticket.js';
 
@@ -44,6 +44,7 @@ const VALID_COMMAND_MODES: DefaultCommandMode[] = ['zsh', 'bash', 'tmux', 'custo
 export function createServer(options: ServerOptions = {}) {
   const app = new Hono<{ Variables: AuthVariables }>();
   const requireSession = createRequireSessionMiddleware(options.sessionService);
+  const requireCredentialsUpdated = createRequireCredentialsUpdatedMiddleware(options.storage);
 
   // 中间件
   app.use('*', cors());
@@ -116,7 +117,66 @@ export function createServer(options: ServerOptions = {}) {
       success: true,
       authenticated: true,
       username,
+      mustChangePassword: admin?.mustChangePassword ?? false,
       expiresAt: session.expiresAt,
+    });
+  });
+
+  // Web Auth - 首次登录后修改管理员账号密码
+  app.post('/api/web-auth/change-credentials', requireSession, requireCsrfToken(), async (c) => {
+    const storage = options.storage;
+    const sessionService = options.sessionService;
+    if (!storage || !sessionService) {
+      return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'Web Auth 未初始化' }, 503);
+    }
+
+    const session = c.get('webSession');
+    const currentAdmin = storage.getAdminByUsername(session.username);
+    if (!currentAdmin) {
+      sessionService.destroySession(c);
+      return c.json({ error: 'UNAUTHORIZED', message: '管理员会话已失效，请重新登录' }, 401);
+    }
+
+    const body = await parseJson<{ username?: string; password?: string }>(c);
+    const newUsername = body?.username?.trim() ?? '';
+    const newPassword = body?.password?.trim() ?? '';
+    if (!newUsername || !newPassword) {
+      return c.json({ error: 'INVALID_INPUT', message: '新用户名和新密码不能为空' }, 400);
+    }
+
+    if (newUsername.length < 3 || newUsername.length > 64) {
+      return c.json({ error: 'INVALID_INPUT', message: '用户名长度必须在 3-64 之间' }, 400);
+    }
+    if (newPassword.length < 8) {
+      return c.json({ error: 'INVALID_INPUT', message: '密码长度至少 8 位' }, 400);
+    }
+
+    if (currentAdmin.mustChangePassword) {
+      if (newUsername === currentAdmin.username) {
+        return c.json({ error: 'INVALID_INPUT', message: '首次修改时必须更换用户名' }, 400);
+      }
+      if (safeVerifyPassword(newPassword, currentAdmin.passwordHash)) {
+        return c.json({ error: 'INVALID_INPUT', message: '首次修改时必须更换密码' }, 400);
+      }
+    }
+
+    storage.updateAdminCredentials(newUsername, hashPassword(newPassword), false);
+    sessionService.destroySession(c);
+
+    const ip = getClientIp(c);
+    const newSession = sessionService.createSession(
+      c,
+      newUsername,
+      ip,
+      c.req.header('user-agent') ?? null,
+    );
+
+    return c.json({
+      success: true,
+      authenticated: true,
+      username: newUsername,
+      mustChangePassword: false,
+      expiresAt: newSession.expiresAt,
     });
   });
 
@@ -129,9 +189,11 @@ export function createServer(options: ServerOptions = {}) {
   // Web Auth - 当前会话
   app.get('/api/web-auth/me', requireSession, (c) => {
     const session = c.get('webSession');
+    const admin = options.storage?.getAdminByUsername(session.username);
     return c.json({
       authenticated: true,
       username: session.username,
+      mustChangePassword: admin?.mustChangePassword ?? false,
       expiresAt: session.expiresAt,
     });
   });
@@ -145,7 +207,7 @@ export function createServer(options: ServerOptions = {}) {
   });
 
   // Daemon 管理 - 在线+配置聚合
-  app.get('/api/daemons', requireSession, (c) => {
+  app.get('/api/daemons', requireSession, requireCredentialsUpdated, (c) => {
     const storage = options.storage;
     if (!storage) {
       return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
@@ -175,6 +237,7 @@ export function createServer(options: ServerOptions = {}) {
   app.post(
     '/api/daemon-profiles',
     requireSession,
+    requireCredentialsUpdated,
     requireCsrfToken(),
     async (c) => {
       return c.json({ error: 'API_DISABLED', message: 'profile 为 daemonId 自动创建，不支持手动新增' }, 405);
@@ -185,6 +248,7 @@ export function createServer(options: ServerOptions = {}) {
   app.patch(
     '/api/daemon-profiles/:id',
     requireSession,
+    requireCredentialsUpdated,
     requireCsrfToken(),
     async (c) => {
       const storage = options.storage;
@@ -228,6 +292,7 @@ export function createServer(options: ServerOptions = {}) {
   app.delete(
     '/api/daemon-profiles/:id',
     requireSession,
+    requireCredentialsUpdated,
     requireCsrfToken(),
     async (c) => {
       const storage = options.storage;
@@ -259,6 +324,7 @@ export function createServer(options: ServerOptions = {}) {
   app.post(
     '/api/daemon-profiles/:id/bind',
     requireSession,
+    requireCredentialsUpdated,
     requireCsrfToken(),
     async (c) => {
       return c.json({ error: 'API_DISABLED', message: 'daemonId 与 profile 一一对应，不支持手动绑定' }, 405);
@@ -269,6 +335,7 @@ export function createServer(options: ServerOptions = {}) {
   app.post(
     '/api/ws-ticket',
     requireSession,
+    requireCredentialsUpdated,
     requireCsrfToken(),
     async (c) => {
       const storage = options.storage;
@@ -315,7 +382,7 @@ export function createServer(options: ServerOptions = {}) {
   );
 
   // Web Preferences - 查询
-  app.get('/api/web-preferences', requireSession, (c) => {
+  app.get('/api/web-preferences', requireSession, requireCredentialsUpdated, (c) => {
     const storage = options.storage;
     if (!storage) {
       return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
@@ -328,6 +395,7 @@ export function createServer(options: ServerOptions = {}) {
   app.put(
     '/api/web-preferences',
     requireSession,
+    requireCredentialsUpdated,
     requireCsrfToken(),
     async (c) => {
       const storage = options.storage;
@@ -335,13 +403,28 @@ export function createServer(options: ServerOptions = {}) {
         return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
       }
 
-      const body = await parseJson<{ shortcuts?: unknown; commonChars?: unknown }>(c);
-      const parsed = parseWebPreferencesInput(body?.shortcuts, body?.commonChars);
+      const body = await parseJson<{
+        shortcuts?: unknown;
+        commonChars?: unknown;
+        relayUrl?: unknown;
+        webLinkToken?: unknown;
+      }>(c);
+      const parsed = parseWebPreferencesInput(
+        body?.shortcuts,
+        body?.commonChars,
+        body?.relayUrl,
+        body?.webLinkToken,
+      );
       if (!parsed) {
-        return c.json({ error: 'INVALID_INPUT', message: '快捷键或常用字符配置无效' }, 400);
+        return c.json({ error: 'INVALID_INPUT', message: 'Web 偏好配置无效' }, 400);
       }
 
-      const preferences = storage.upsertWebPreferences(parsed.shortcuts, parsed.commonChars);
+      const preferences = storage.upsertWebPreferences(
+        parsed.shortcuts,
+        parsed.commonChars,
+        parsed.relayUrl,
+        parsed.webLinkToken,
+      );
       return c.json(preferences);
     },
   );
@@ -355,6 +438,7 @@ export function createServer(options: ServerOptions = {}) {
         '/health': 'GET - 健康检查',
         '/ws': 'WebSocket - 设备连接端点',
         '/api/web-auth/login': 'POST - Web 登录',
+        '/api/web-auth/change-credentials': 'POST - 修改管理员账号密码（首次登录必改）',
         '/api/web-auth/logout': 'POST - Web 退出',
         '/api/web-auth/me': 'GET - 当前登录用户',
         '/api/web-auth/csrf': 'GET - 获取 CSRF Token',
@@ -381,6 +465,29 @@ function createRequireSessionMiddleware(
   }
 
   return requireWebSession(sessionService);
+}
+
+function createRequireCredentialsUpdatedMiddleware(
+  storage: RelayStorage | undefined,
+): MiddlewareHandler<{ Variables: AuthVariables }> {
+  if (!storage) {
+    return async (c) => {
+      return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
+    };
+  }
+
+  return async (c, next) => {
+    const session = c.get('webSession');
+    const admin = storage.getAdminByUsername(session.username);
+    if (admin?.mustChangePassword) {
+      return c.json(
+        { error: 'CREDENTIALS_UPDATE_REQUIRED', message: '首次登录后必须先修改账号和密码' },
+        428,
+      );
+    }
+
+    await next();
+  };
 }
 
 /** 安全包装密码校验，避免 hash 解析异常中断请求 */
@@ -453,9 +560,16 @@ function parsePatchProfileInput(body: Record<string, unknown> | null): DaemonPro
 }
 
 /** Web 偏好输入校验 */
-function parseWebPreferencesInput(shortcutsInput: unknown, commonCharsInput: unknown): {
+function parseWebPreferencesInput(
+  shortcutsInput: unknown,
+  commonCharsInput: unknown,
+  relayUrlInput: unknown,
+  webLinkTokenInput: unknown,
+): {
   shortcuts: WebShortcut[];
   commonChars: string[];
+  relayUrl: string | null;
+  webLinkToken: string | null;
 } | null {
   if (!Array.isArray(shortcutsInput) || !Array.isArray(commonCharsInput)) {
     return null;
@@ -490,7 +604,10 @@ function parseWebPreferencesInput(shortcutsInput: unknown, commonCharsInput: unk
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
 
-  return { shortcuts, commonChars };
+  const relayUrl = normalizeOptionalString(relayUrlInput);
+  const webLinkToken = normalizeOptionalString(webLinkTokenInput);
+
+  return { shortcuts, commonChars, relayUrl, webLinkToken };
 }
 
 /** 规范化可空字符串 */
@@ -501,6 +618,15 @@ function normalizeNullableString(value: unknown): string | null {
 
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 /** 规范化命令模式 */

@@ -39,7 +39,13 @@ sequenceDiagram
   W->>R: POST /api/web-auth/login (username/password)
   R->>DB: 校验用户名密码 + 暴力破解策略
   DB-->>R: 通过
-  R-->>W: 200 + session cookie + csrf cookie
+  R-->>W: 200 + session cookie + csrf cookie + mustChangePassword
+
+  opt 首次登录（mustChangePassword=true）
+    W->>R: POST /api/web-auth/change-credentials (username,password,X-CSRF-Token)
+    R->>DB: 更新管理员账号密码并清除 mustChangePassword
+    R-->>W: 200 + 新 session
+  end
 
   W->>R: GET /api/web-auth/csrf
   R-->>W: csrfToken

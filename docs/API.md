@@ -39,7 +39,9 @@ MyTermux 协议分为两层：
 
 #### `POST /api/web-auth/login`
 
-- 按用户名/密码模式登录（`RELAY_ADMIN_*`）。
+- 按用户名/密码模式登录。
+- 首次初始化默认管理员账号：`admin` / `mytermux`。
+- 若返回 `mustChangePassword=true`，表示必须先调用修改凭据接口。
 
 请求：
 
@@ -55,7 +57,35 @@ MyTermux 协议分为两层：
 ```json
 {
   "success": true,
+  "authenticated": true,
   "username": "admin",
+  "mustChangePassword": true,
+  "expiresAt": 1730000000000
+}
+```
+
+#### `POST /api/web-auth/change-credentials`
+
+- 需要登录 + CSRF
+- 用于首次登录后强制修改账号和密码
+
+请求：
+
+```json
+{
+  "username": "new-admin",
+  "password": "new-password"
+}
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "authenticated": true,
+  "username": "new-admin",
+  "mustChangePassword": false,
   "expiresAt": 1730000000000
 }
 ```
@@ -78,6 +108,7 @@ MyTermux 协议分为两层：
 {
   "authenticated": true,
   "username": "admin",
+  "mustChangePassword": false,
   "expiresAt": 1730000000000
 }
 ```
@@ -198,6 +229,8 @@ MyTermux 协议分为两层：
     { "id": "ctrl-c", "label": "Ctrl+C", "value": "\u0003" }
   ],
   "commonChars": ["/", "~", "|"],
+  "relayUrl": "ws://127.0.0.1:62200/ws",
+  "webLinkToken": "relay-web-link-token",
   "updatedAt": 1730000000000
 }
 ```
@@ -211,7 +244,9 @@ MyTermux 协议分为两层：
   "shortcuts": [
     { "id": "ctrl-c", "label": "Ctrl+C", "value": "\u0003" }
   ],
-  "commonChars": ["/", "~", "|"]
+  "commonChars": ["/", "~", "|"],
+  "relayUrl": "ws://127.0.0.1:62200/ws",
+  "webLinkToken": "relay-web-link-token"
 }
 ```
 

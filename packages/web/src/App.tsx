@@ -3,24 +3,28 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { LoginPage } from './pages/LoginPage';
 import { DaemonHubPage } from './pages/DaemonHubPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { AccountSetupPage } from './pages/AccountSetupPage';
 import { useWebAuthStore } from './stores/webAuthStore';
 
 function RootRedirect() {
-  const { status } = useWebAuthStore();
+  const { status, mustChangePassword } = useWebAuthStore();
 
   if (status === 'checking') {
     return <LoadingScreen />;
   }
 
   if (status === 'authenticated') {
+    if (mustChangePassword) {
+      return <Navigate to="/account-setup" replace />;
+    }
     return <Navigate to="/daemons" replace />;
   }
 
   return <Navigate to="/login" replace />;
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { status } = useWebAuthStore();
+function ProtectedRoute({ children, allowMustChange = false }: { children: React.ReactNode; allowMustChange?: boolean }) {
+  const { status, mustChangePassword } = useWebAuthStore();
 
   if (status === 'checking') {
     return <LoadingScreen />;
@@ -28,6 +32,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (status !== 'authenticated') {
     return <Navigate to="/login" replace />;
+  }
+
+  if (mustChangePassword && !allowMustChange) {
+    return <Navigate to="/account-setup" replace />;
   }
 
   return <>{children}</>;
@@ -44,6 +52,24 @@ function LoadingScreen() {
   );
 }
 
+function AccountSetupRoute() {
+  const { status, mustChangePassword } = useWebAuthStore();
+
+  if (status === 'checking') {
+    return <LoadingScreen />;
+  }
+
+  if (status !== 'authenticated') {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!mustChangePassword) {
+    return <Navigate to="/daemons" replace />;
+  }
+
+  return <AccountSetupPage />;
+}
+
 function App() {
   const { initialized, checkSession } = useWebAuthStore();
 
@@ -58,6 +84,7 @@ function App() {
       <Routes>
         <Route path="/" element={<RootRedirect />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/account-setup" element={<AccountSetupRoute />} />
 
         <Route
           path="/daemons"

@@ -21,6 +21,7 @@ interface TestContext {
 
 interface CreateTestContextOptions {
   webLinkToken?: string;
+  mustChangePassword?: boolean;
 }
 
 const contexts: TestContext[] = [];
@@ -40,7 +41,7 @@ afterEach(() => {
 function createTestContext(options: CreateTestContextOptions = {}): TestContext {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mytermux-relay-api-'));
   const storage = new RelayStorage(path.join(tmpDir, 'relay.db'), 'test-master-key');
-  storage.upsertAdmin('admin', hashPassword('secret-pass'));
+  storage.upsertAdmin('admin', hashPassword('secret-pass'), options.mustChangePassword ?? false);
 
   const deviceRegistry = new DeviceRegistry();
   const sessionService = new WebSessionService(storage);
@@ -70,12 +71,25 @@ function createTestContext(options: CreateTestContextOptions = {}): TestContext 
 
 function extractCookieHeader(response: Response): string {
   const setCookies = getSetCookies(response);
+  const latestByName = new Map<string, string>();
 
-  const cookiePairs = setCookies
-    .map((cookie) => cookie.split(';')[0])
-    .filter((cookie): cookie is string => !!cookie);
+  for (const cookie of setCookies) {
+    const pair = cookie.split(';')[0];
+    if (!pair) {
+      continue;
+    }
+    const equalIndex = pair.indexOf('=');
+    if (equalIndex <= 0) {
+      continue;
+    }
+    const name = pair.slice(0, equalIndex).trim();
+    if (!name) {
+      continue;
+    }
+    latestByName.set(name, pair.trim());
+  }
 
-  return cookiePairs.join('; ');
+  return Array.from(latestByName.values()).join('; ');
 }
 
 function getSetCookies(response: Response): string[] {
@@ -205,6 +219,74 @@ describe('Relay API integration', () => {
     });
 
     expect(response.status).toBe(400);
+  });
+
+  it('should require changing username/password on first login before accessing protected apis', async () => {
+    const { app } = createTestContext({ mustChangePassword: true });
+    const loginResponse = await app.request('/api/web-auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'secret-pass' }),
+    });
+    expect(loginResponse.status).toBe(200);
+    const loginBody = await loginResponse.json() as {
+      mustChangePassword?: boolean;
+      authenticated?: boolean;
+    };
+    expect(loginBody.authenticated).toBe(true);
+    expect(loginBody.mustChangePassword).toBe(true);
+
+    const cookies = extractCookieHeader(loginResponse);
+    const csrfResponse = await app.request('/api/web-auth/csrf', {
+      headers: { cookie: cookies },
+    });
+    expect(csrfResponse.status).toBe(200);
+    const csrfBody = await csrfResponse.json() as { csrfToken: string };
+
+    const blockedDaemons = await app.request('/api/daemons', {
+      headers: { cookie: cookies },
+    });
+    expect(blockedDaemons.status).toBe(428);
+
+    const updateResponse = await app.request('/api/web-auth/change-credentials', {
+      method: 'POST',
+      headers: {
+        cookie: cookies,
+        'x-csrf-token': csrfBody.csrfToken,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        username: 'root-admin',
+        password: 'new-secret-pass',
+      }),
+    });
+    expect(updateResponse.status).toBe(200);
+    const updateBody = await updateResponse.json() as {
+      mustChangePassword?: boolean;
+      username: string;
+    };
+    expect(updateBody.username).toBe('root-admin');
+    expect(updateBody.mustChangePassword).toBe(false);
+
+    const newCookies = extractCookieHeader(updateResponse);
+    const daemonsResponse = await app.request('/api/daemons', {
+      headers: { cookie: newCookies },
+    });
+    expect(daemonsResponse.status).toBe(200);
+
+    const oldLogin = await app.request('/api/web-auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: 'secret-pass' }),
+    });
+    expect(oldLogin.status).toBe(401);
+
+    const newLogin = await app.request('/api/web-auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'root-admin', password: 'new-secret-pass' }),
+    });
+    expect(newLogin.status).toBe(200);
   });
 
   it('should reject protected api when unauthenticated', async () => {

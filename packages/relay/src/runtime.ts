@@ -4,7 +4,7 @@ import { DeviceRegistry } from './device-registry.js';
 import { MessageRouter } from './message-router.js';
 import { WebSocketHandler } from './websocket-handler.js';
 import { LoginBruteforceGuard } from './auth/bruteforce.js';
-import { hashPassword, isScryptHash } from './auth/password.js';
+import { hashPassword } from './auth/password.js';
 import { WebSessionService } from './auth/session.js';
 import { WsTicketService } from './auth/ws-ticket.js';
 import { createServer } from './server.js';
@@ -33,11 +33,8 @@ export function initializeRelayRuntime(): RelayRuntime {
     console.warn('[Relay] 未设置 RELAY_WEB_MASTER_KEY，当前使用开发默认值，请勿用于生产环境');
   }
 
-  const adminUsername = process.env['RELAY_ADMIN_USERNAME']?.trim() || 'admin';
-  const passwordHash = resolveAdminPasswordHash();
-
   const storage = new RelayStorage(dbPath, masterKey);
-  storage.upsertAdmin(adminUsername, passwordHash);
+  ensureDefaultAdmin(storage);
 
   const sessionService = new WebSessionService(storage);
   const loginGuard = new LoginBruteforceGuard(storage);
@@ -72,16 +69,12 @@ export function initializeRelayRuntime(): RelayRuntime {
   };
 }
 
-function resolveAdminPasswordHash(): string {
-  const inputHash = process.env['RELAY_ADMIN_PASSWORD_HASH']?.trim();
-  if (inputHash) {
-    if (!isScryptHash(inputHash)) {
-      throw new Error('RELAY_ADMIN_PASSWORD_HASH 格式非法，应为 scrypt$N$r$p$saltB64$hashB64');
-    }
-    return inputHash;
+function ensureDefaultAdmin(storage: RelayStorage): void {
+  const existingAdmin = storage.getAdmin();
+  if (existingAdmin) {
+    return;
   }
 
-  const defaultPassword = 'mytermux';
-  console.warn('[Relay] 未设置 RELAY_ADMIN_PASSWORD_HASH，使用默认管理员密码: mytermux（仅开发环境）');
-  return hashPassword(defaultPassword);
+  storage.upsertAdmin('admin', hashPassword('mytermux'), true);
+  console.warn('[Relay] 首次初始化默认管理员账号: admin / mytermux（首次登录后必须修改账号和密码）');
 }

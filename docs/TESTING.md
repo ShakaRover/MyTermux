@@ -46,11 +46,13 @@ bash ./scripts/web/start-fg.sh
 ### 2.2 Web 登录与管理
 
 1. 打开 `http://127.0.0.1:62100/login`
-2. 使用管理员账号密码（`RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH`）登录
-3. 在 `/daemons` 验证在线 daemon 自动生成 profile
-4. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）
-5. 让 daemon 离线，验证 profile 保留且支持手动删除
-6. 点击“连接”进入 `/sessions`
+2. 使用默认账号密码 `admin` / `mytermux` 登录
+3. 首次登录必须进入账号初始化页并修改账号和密码
+4. 完成账号初始化后，在 `/daemons` 验证在线 daemon 自动生成 profile
+5. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）
+6. 让 daemon 离线，验证 profile 保留且支持手动删除
+7. 验证可在 Web 端保存 Relay 地址与 `MYTERMUX_WEB_LINK_TOKEN` 配置
+8. 点击“连接”进入 `/sessions`
 
 ### 2.3 终端会话
 

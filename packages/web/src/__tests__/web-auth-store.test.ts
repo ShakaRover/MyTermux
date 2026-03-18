@@ -4,6 +4,7 @@ vi.mock('../api', () => ({
   fetchWebSession: vi.fn(),
   loginWebAdmin: vi.fn(),
   logoutWebAdmin: vi.fn(),
+  updateWebAdminCredentials: vi.fn(),
 }));
 
 import { fetchWebSession, loginWebAdmin, logoutWebAdmin } from '../api';
@@ -14,6 +15,7 @@ describe('webAuthStore', () => {
     useWebAuthStore.setState({
       status: 'checking',
       username: null,
+      mustChangePassword: false,
       error: null,
       initialized: false,
     });
@@ -24,6 +26,7 @@ describe('webAuthStore', () => {
     vi.mocked(fetchWebSession).mockResolvedValue({
       authenticated: true,
       username: 'admin',
+      mustChangePassword: false,
       expiresAt: Date.now() + 60_000,
     });
 
@@ -32,6 +35,7 @@ describe('webAuthStore', () => {
     const state = useWebAuthStore.getState();
     expect(state.status).toBe('authenticated');
     expect(state.username).toBe('admin');
+    expect(state.mustChangePassword).toBe(false);
     expect(state.initialized).toBe(true);
   });
 
@@ -39,6 +43,7 @@ describe('webAuthStore', () => {
     vi.mocked(loginWebAdmin).mockResolvedValue({
       authenticated: true,
       username: 'admin',
+      mustChangePassword: false,
       expiresAt: Date.now() + 60_000,
     });
 
@@ -47,6 +52,7 @@ describe('webAuthStore', () => {
     const state = useWebAuthStore.getState();
     expect(state.status).toBe('authenticated');
     expect(state.username).toBe('admin');
+    expect(state.mustChangePassword).toBe(false);
     expect(state.error).toBeNull();
     expect(state.initialized).toBe(true);
   });
@@ -58,6 +64,7 @@ describe('webAuthStore', () => {
 
     const state = useWebAuthStore.getState();
     expect(state.status).toBe('unauthenticated');
+    expect(state.mustChangePassword).toBe(false);
     expect(state.error).toBe('bad credentials');
   });
 
@@ -65,6 +72,7 @@ describe('webAuthStore', () => {
     useWebAuthStore.setState({
       status: 'authenticated',
       username: 'admin',
+      mustChangePassword: false,
       error: null,
       initialized: true,
     });
@@ -75,6 +83,7 @@ describe('webAuthStore', () => {
     const state = useWebAuthStore.getState();
     expect(state.status).toBe('unauthenticated');
     expect(state.username).toBeNull();
+    expect(state.mustChangePassword).toBe(false);
     expect(state.initialized).toBe(true);
   });
 });

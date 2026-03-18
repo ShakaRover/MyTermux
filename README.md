@@ -52,8 +52,6 @@ pnpm turbo run build
 ```bash
 cp .env.example .env
 # 编辑 .env，至少填写:
-# RELAY_ADMIN_USERNAME
-# RELAY_ADMIN_PASSWORD_HASH
 # MYTERMUX_WEB_LINK_TOKEN
 # MYTERMUX_DAEMON_LINK_TOKEN
 # RELAY_WEB_MASTER_KEY
@@ -94,8 +92,13 @@ bash ./scripts/web/stop.sh
 
 3. 打开 `http://127.0.0.1:62100`
 
-4. 登录 Web 管理中心后：
+4. 登录 Web 管理中心：
+- 默认账号密码：`admin` / `mytermux`
+- 首次登录后必须先修改账号和密码
+
+5. 登录并完成账号初始化后：
 - 在线 daemon 自动生成 profile，可编辑配置（token、默认目录、默认命令）
+- 可在 Web 端配置 Relay WebSocket 地址与 `MYTERMUX_WEB_LINK_TOKEN`
 - 离线 profile 会保留，支持手动删除
 - 点击“连接”进入会话页面
 
