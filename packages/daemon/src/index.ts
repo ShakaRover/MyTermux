@@ -6,7 +6,7 @@
  * - mytermux start  启动守护进程
  * - mytermux stop   停止守护进程
  * - mytermux status 查看状态
- * - mytermux token  查看 Access Token
+ * - mytermux token  查看 MYTERMUX_DAEMON_TOKEN
  */
 
 import { Command } from 'commander';
@@ -140,8 +140,9 @@ program
   .command('start')
   .description('启动守护进程')
   .option('-r, --relay <url>', '中继服务器地址', process.env['RELAY_URL'] || 'ws://localhost:3000')
+  .option('--daemon-link-token <token>', 'daemon 连接 Relay 链路 token（默认读取 MYTERMUX_DAEMON_LINK_TOKEN）', process.env['MYTERMUX_DAEMON_LINK_TOKEN'] || '')
   .option('-f, --foreground', '前台运行（不作为守护进程）', false)
-  .action(async (options: { relay: string; foreground: boolean }) => {
+  .action(async (options: { relay: string; foreground: boolean; daemonLinkToken: string }) => {
     // 检查是否已有进程在运行
     const existingPid = await readPidFile();
     if (existingPid && isProcessRunning(existingPid)) {
@@ -153,6 +154,9 @@ program
     if (!options.foreground) {
       const scriptPath = fileURLToPath(import.meta.url);
       const args = ['start', '-f', '-r', options.relay];
+      if (options.daemonLinkToken.trim()) {
+        args.push('--daemon-link-token', options.daemonLinkToken.trim());
+      }
       const logFile = path.join(CONFIG_DIR, 'daemon.log');
 
       await ensureConfigDir();
@@ -184,14 +188,15 @@ program
           // 读取并显示 Access Token
           try {
             const content = await fs.readFile(AUTH_DATA_FILE, 'utf-8');
-            const data = JSON.parse(content) as { accessToken?: string };
-            if (data.accessToken) {
-              console.log(`Access Token: ${maskToken(data.accessToken)}`);
+            const data = JSON.parse(content) as { daemonToken?: string; accessToken?: string };
+            const daemonToken = data.daemonToken || data.accessToken;
+            if (daemonToken) {
+              console.log(`MYTERMUX_DAEMON_TOKEN: ${maskToken(daemonToken)}`);
             }
           } catch (readErr) {
             // I7: 区分文件不存在（正常情况）和其他错误
             if ((readErr as NodeJS.ErrnoException).code === 'ENOENT') {
-              console.log('提示: 运行 pnpm --filter @mytermux/daemon token 获取 Access Token');
+              console.log('提示: 运行 pnpm --filter @mytermux/daemon token 获取 MYTERMUX_DAEMON_TOKEN');
             } else {
               console.warn('读取 Access Token 失败:', readErr instanceof Error ? readErr.message : readErr);
             }
@@ -212,8 +217,10 @@ program
     // 前台模式：直接在当前进程运行
     console.log(`启动守护进程，连接到中继服务器: ${options.relay}`);
 
+    const daemonLinkToken = options.daemonLinkToken.trim();
     const daemon = new Daemon({
       relayUrl: options.relay,
+      ...(daemonLinkToken ? { daemonLinkToken } : {}),
     });
 
     // 设置事件监听
@@ -230,7 +237,7 @@ program
     });
 
     daemon.on('accessToken', (token) => {
-      console.log(`\nAccess Token 已更新: ${maskToken(token)}\n`);
+      console.log(`\nMYTERMUX_DAEMON_TOKEN 已更新: ${maskToken(token)}\n`);
     });
 
     daemon.on('error', (error) => {
@@ -256,8 +263,8 @@ program
 
       // 输出 Access Token
       const token = daemon.getAccessToken();
-      console.log(`\nAccess Token: ${maskToken(token)}`);
-      console.log('客户端使用此 Token 连接 daemon\n');
+      console.log(`\nMYTERMUX_DAEMON_TOKEN: ${maskToken(token)}`);
+      console.log('Web 端通过该 Token 完成 daemon 控制授权\n');
 
       // 更新状态文件
       const updateStatus = async (): Promise<void> => {
@@ -348,16 +355,16 @@ program
   });
 
 /**
- * token 命令 - 查看 Access Token
+ * token 命令 - 查看 MYTERMUX_DAEMON_TOKEN
  */
 program
   .command('token')
-  .description('查看 Access Token')
+  .description('查看 MYTERMUX_DAEMON_TOKEN')
   .action(async () => {
     try {
       // I12: 复用 auth-manager.ts 的 readAccessToken，消除重复迁移逻辑
       const { token, migrated } = await readAccessToken();
-      console.log(`Access Token: ${token}`);
+      console.log(`MYTERMUX_DAEMON_TOKEN: ${token}`);
       if (migrated) {
         console.log('(已自动升级旧版配置文件)');
       }

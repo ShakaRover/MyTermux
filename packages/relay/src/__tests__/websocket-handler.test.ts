@@ -77,8 +77,14 @@ function sendRegisterMessage(
   deviceType: 'daemon' | 'client',
   publicKey: string,
   accessToken?: string,
+  daemonLinkToken?: string,
 ) {
-  const payload = JSON.stringify({ deviceType, publicKey, ...(accessToken && { accessToken }) });
+  const payload = JSON.stringify({
+    deviceType,
+    publicKey,
+    ...(accessToken && { accessToken }),
+    ...(daemonLinkToken && { daemonLinkToken }),
+  });
   const message = createTransportMessage('register', deviceId, payload);
   (ws as unknown as EventEmitter).emit('message', Buffer.from(JSON.stringify(message)));
 }
@@ -133,6 +139,7 @@ describe('WebSocketHandler', () => {
     wsTicketService = createMockWsTicketService();
     vi.mocked(wsTicketService.consume).mockImplementation((ticket: string) => ({
       ticket,
+      daemonToken: 'valid-token',
       accessToken: 'valid-token',
       profileId: 'profile-1',
       createdAt: Date.now(),
@@ -323,6 +330,33 @@ describe('WebSocketHandler', () => {
       const sentData = JSON.parse((ws.send as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string);
       expect(sentData.type).toBe('error');
     });
+
+    it('开启 daemonLinkToken 后，daemon 使用错误 token 应被拒绝', () => {
+      const strictHandler = new WebSocketHandler(registry, router, wsTicketService, {
+        daemonLinkToken: 'relay-daemon-link-token',
+      });
+      const ws = createMockWs();
+      strictHandler.handleConnection(ws);
+
+      sendRegisterMessage(ws, 'daemon-1', 'daemon', 'pk-1', 'token-1', 'wrong-token');
+
+      expect(registry.registerDevice).not.toHaveBeenCalled();
+      expect(ws.close).toHaveBeenCalledWith(4006, 'Daemon Link Token 无效');
+    });
+
+    it('开启 daemonLinkToken 后，daemon 使用正确 token 应允许注册', () => {
+      const strictHandler = new WebSocketHandler(registry, router, wsTicketService, {
+        daemonLinkToken: 'relay-daemon-link-token',
+      });
+      const ws = createMockWs();
+      strictHandler.handleConnection(ws);
+
+      sendRegisterMessage(ws, 'daemon-1', 'daemon', 'pk-1', 'token-1', 'relay-daemon-link-token');
+
+      expect(registry.registerDevice).toHaveBeenCalledWith(
+        ws, 'daemon-1', 'daemon', 'pk-1', 'token-1',
+      );
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -389,7 +423,7 @@ describe('WebSocketHandler', () => {
 
       expect(registry.validateAccessToken).not.toHaveBeenCalled();
       expect(registry.unregisterDevice).toHaveBeenCalledWith('client-1');
-      expect(ws.close).toHaveBeenCalledWith(4002, 'Access Token 与 ws ticket 不一致');
+      expect(ws.close).toHaveBeenCalledWith(4002, 'MYTERMUX_DAEMON_TOKEN 与 ws ticket 不一致');
     });
   });
 

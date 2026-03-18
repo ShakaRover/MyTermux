@@ -5,7 +5,7 @@
 MyTermux 当前推荐流程：
 
 1. 启动 relay（Web 登录入口 + 中继）
-2. 启动 daemon（提供 Access Token）
+2. 启动 daemon（提供 `MYTERMUX_DAEMON_TOKEN`）
 3. 浏览器登录 Web 管理中心
 4. 在 Web 中编辑 daemon profile 配置
 5. 连接 daemon 并进入终端会话
@@ -36,15 +36,15 @@ pnpm --filter @mytermux/relay start:fg
 - HTTP: `http://localhost:3000`
 - WebSocket: `ws://localhost:3000/ws`
 
-> 开发环境未设置管理员环境变量时，默认账号：`admin`，默认密码：`mytermux`。
+> 推荐优先配置 `MYTERMUX_WEB_TOKEN`；未配置时可回退管理员账号/密码模式。
 
 ### 3.3 启动 daemon
 
 ```bash
-pnpm --filter @mytermux/daemon start:fg
+pnpm --filter @mytermux/daemon start:fg -- --daemon-link-token '<daemon-link-token>'
 ```
 
-查看完整 token：
+查看完整 `MYTERMUX_DAEMON_TOKEN`：
 
 ```bash
 pnpm --filter @mytermux/daemon token
@@ -111,14 +111,15 @@ pnpm --filter @mytermux/relay status
 
 ### 8.1 Relay 状态正常但 Web 登录失败
 
-- 检查管理员环境变量是否正确（见 `docs/DEPLOYMENT.md`）
+- 优先检查 `MYTERMUX_WEB_TOKEN` 是否匹配
+- 兼容模式再检查管理员环境变量（见 `docs/DEPLOYMENT.md`）
 - 查看 `relay.log`
 
 ### 8.2 Daemon 在线但无法连接
 
-- 确认 profile 已配置有效 token
+- 确认 profile 已配置有效 `MYTERMUX_DAEMON_TOKEN`
 - 在 `/daemons` 中确认 profile 对应 daemonId 与在线 daemon 一致
-- 确认 token 前缀为 `mytermux-`
+- 若启用链路鉴权，确认 `MYTERMUX_DAEMON_LINK_TOKEN` 一致
 
 ### 8.3 终端无输出或频繁断开
 

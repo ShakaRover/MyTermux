@@ -19,6 +19,11 @@ interface TestContext {
   app: ReturnType<typeof createServer>;
 }
 
+interface CreateTestContextOptions {
+  webToken?: string;
+  webLinkToken?: string;
+}
+
 const contexts: TestContext[] = [];
 
 afterEach(() => {
@@ -33,7 +38,7 @@ afterEach(() => {
   }
 });
 
-function createTestContext(): TestContext {
+function createTestContext(options: CreateTestContextOptions = {}): TestContext {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mytermux-relay-api-'));
   const storage = new RelayStorage(path.join(tmpDir, 'relay.db'), 'test-master-key');
   storage.upsertAdmin('admin', hashPassword('secret-pass'));
@@ -49,6 +54,8 @@ function createTestContext(): TestContext {
     sessionService,
     loginGuard,
     wsTicketService,
+    ...(options.webToken ? { webToken: options.webToken } : {}),
+    ...(options.webLinkToken ? { webLinkToken: options.webLinkToken } : {}),
   });
 
   const context: TestContext = {
@@ -99,16 +106,20 @@ function createMockWs() {
   } as unknown as import('ws').WebSocket;
 }
 
-async function loginAndGetAuth(app: ReturnType<typeof createServer>): Promise<{ cookies: string; csrfToken: string }> {
+async function loginAndGetAuth(
+  app: ReturnType<typeof createServer>,
+  options: { webToken?: string } = {},
+): Promise<{ cookies: string; csrfToken: string }> {
+  const loginPayload = options.webToken
+    ? { token: options.webToken }
+    : { username: 'admin', password: 'secret-pass' };
+
   const loginResponse = await app.request('/api/web-auth/login', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      username: 'admin',
-      password: 'secret-pass',
-    }),
+    body: JSON.stringify(loginPayload),
   });
 
   expect(loginResponse.status).toBe(200);
@@ -187,6 +198,13 @@ describe('Relay API integration', () => {
     const consumed = wsTicketService.consume(wsTicketBody.ticket);
     expect(consumed?.profileId).toBe(profile!.id);
     expect(wsTicketService.consume(wsTicketBody.ticket)).toBeNull();
+  });
+
+  it('should login with MYTERMUX_WEB_TOKEN when enabled', async () => {
+    const { app } = createTestContext({ webToken: 'web-login-token' });
+
+    const { cookies } = await loginAndGetAuth(app, { webToken: 'web-login-token' });
+    expect(cookies.includes('mytermux_web_session=')).toBe(true);
   });
 
   it('should reject protected api when unauthenticated', async () => {
@@ -374,6 +392,64 @@ describe('Relay API integration', () => {
     });
 
     expect(response.status).toBe(400);
+  });
+
+  it('should require MYTERMUX_WEB_LINK_TOKEN for ws-ticket when configured', async () => {
+    const { app, deviceRegistry } = createTestContext({
+      webLinkToken: 'web-link-token',
+    });
+    deviceRegistry.registerDevice(
+      createMockWs(),
+      'daemon-link-token-check',
+      'daemon',
+      'daemon-public-key-link-token-check',
+      'mytermux-13579bdf2468ace00112233445566778',
+    );
+
+    const { cookies, csrfToken } = await loginAndGetAuth(app);
+    const daemonsResponse = await app.request('/api/daemons', {
+      headers: { cookie: cookies },
+    });
+    const daemonsBody = await daemonsResponse.json() as {
+      profiles: Array<{ id: string; daemonId?: string | null }>;
+    };
+    const profileId = daemonsBody.profiles.find((item) => item.daemonId === 'daemon-link-token-check')?.id;
+    expect(profileId).toBeDefined();
+
+    const patchTokenResponse = await app.request(`/api/daemon-profiles/${profileId}`, {
+      method: 'PATCH',
+      headers: {
+        cookie: cookies,
+        'x-csrf-token': csrfToken,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        daemonToken: 'mytermux-13579bdf2468ace00112233445566778',
+      }),
+    });
+    expect(patchTokenResponse.status).toBe(200);
+
+    const denied = await app.request('/api/ws-ticket', {
+      method: 'POST',
+      headers: {
+        cookie: cookies,
+        'x-csrf-token': csrfToken,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ profileId }),
+    });
+    expect(denied.status).toBe(401);
+
+    const allowed = await app.request('/api/ws-ticket', {
+      method: 'POST',
+      headers: {
+        cookie: cookies,
+        'x-csrf-token': csrfToken,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ profileId, webLinkToken: 'web-link-token' }),
+    });
+    expect(allowed.status).toBe(200);
   });
 
 });

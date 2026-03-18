@@ -20,16 +20,19 @@ pnpm turbo run build
 
 ## 3.1 必要环境变量
 
-- `RELAY_ADMIN_USERNAME`：Web 管理员用户名
-- `RELAY_ADMIN_PASSWORD_HASH`：管理员密码哈希（格式 `scrypt$N$r$p$saltB64$hashB64`）
+- `MYTERMUX_WEB_TOKEN`：Web 登录 token（推荐开启；开启后登录按 token 校验）
+- `MYTERMUX_WEB_LINK_TOKEN`：Web 前端申请 ws-ticket 前置 token（推荐开启）
+- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 前置 token（推荐开启）
 - `RELAY_WEB_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
 - `RELAY_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/relay.db`）
+- 兼容模式可选：`RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH`
 
 示例：
 
 ```bash
-export RELAY_ADMIN_USERNAME=admin
-export RELAY_ADMIN_PASSWORD_HASH='<scrypt-hash>'
+export MYTERMUX_WEB_TOKEN='<web-login-token>'
+export MYTERMUX_WEB_LINK_TOKEN='<web-link-token>'
+export MYTERMUX_DAEMON_LINK_TOKEN='<daemon-link-token>'
 export RELAY_WEB_MASTER_KEY='<32-byte-random-secret>'
 export RELAY_DB_PATH=/var/lib/mytermux/relay.db
 ```
@@ -65,10 +68,10 @@ curl http://127.0.0.1:3000/health
 在被控主机运行：
 
 ```bash
-pnpm --filter @mytermux/daemon start -- --relay ws://<relay-host>:3000
+pnpm --filter @mytermux/daemon start -- --relay ws://<relay-host>:3000 --daemon-link-token '<daemon-link-token>'
 ```
 
-查看 token：
+查看 `MYTERMUX_DAEMON_TOKEN`：
 
 ```bash
 pnpm --filter @mytermux/daemon token
@@ -77,6 +80,9 @@ pnpm --filter @mytermux/daemon token
 ## 5. Web 部署
 
 ```bash
+# 仅当 Relay 开启 MYTERMUX_WEB_LINK_TOKEN 时需要
+export VITE_MYTERMUX_WEB_LINK_TOKEN='<web-link-token>'
+
 pnpm --filter @mytermux/web build
 ```
 
@@ -138,8 +144,9 @@ Restart=always
 RestartSec=3
 User=mytermux
 Environment=NODE_ENV=production
-Environment=RELAY_ADMIN_USERNAME=admin
-Environment=RELAY_ADMIN_PASSWORD_HASH=<scrypt-hash>
+Environment=MYTERMUX_WEB_TOKEN=<web-login-token>
+Environment=MYTERMUX_WEB_LINK_TOKEN=<web-link-token>
+Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
 Environment=RELAY_WEB_MASTER_KEY=<master-key>
 Environment=RELAY_DB_PATH=/var/lib/mytermux/relay.db
 
@@ -162,6 +169,7 @@ Restart=always
 RestartSec=3
 User=mytermux
 Environment=NODE_ENV=production
+Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
 
 [Install]
 WantedBy=multi-user.target
@@ -170,10 +178,10 @@ WantedBy=multi-user.target
 ## 8. 安全建议
 
 - Relay 必须在 TLS 环境运行
-- 不要在生产环境使用默认管理员配置
+- 不要在生产环境使用默认管理员配置（建议启用 `MYTERMUX_WEB_TOKEN`）
 - `RELAY_WEB_MASTER_KEY` 必须高强度随机并妥善保管
-- daemon token 仅通过可信渠道分发
-- 定期轮换 daemon token
+- `MYTERMUX_WEB_LINK_TOKEN` / `MYTERMUX_DAEMON_LINK_TOKEN` 仅通过可信渠道分发
+- `MYTERMUX_DAEMON_TOKEN` 仅通过可信渠道分发，并定期轮换
 - 监控登录失败与锁定事件
 
 ## 9. 运行时文件

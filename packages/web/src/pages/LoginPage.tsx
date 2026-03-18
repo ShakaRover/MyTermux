@@ -23,7 +23,7 @@ export function LoginPage() {
   const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!username.trim() || !password) {
+    if (!password) {
       return;
     }
 
@@ -31,7 +31,7 @@ export function LoginPage() {
     clearError();
 
     try {
-      await login(username.trim(), password);
+      await login(username.trim() || 'web-token-user', password);
       navigate('/daemons', { replace: true });
     } catch (submitError) {
       console.error('登录失败:', submitError);
@@ -66,7 +66,7 @@ export function LoginPage() {
 
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1.5">
-              密码
+              密码 / 登录 Token
             </label>
             <input
               id="password"
@@ -95,7 +95,7 @@ export function LoginPage() {
         </form>
 
         <p className="mt-4 text-xs text-gray-500 text-center">
-          默认开发账号由 Relay 环境变量配置（`RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH`）。
+          优先支持 `MYTERMUX_WEB_TOKEN` 登录；未配置时回退为 `RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH`。
         </p>
       </div>
     </div>

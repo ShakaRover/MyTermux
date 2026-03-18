@@ -34,6 +34,7 @@ export interface WsTicketResponse {
 
 export interface DaemonProfilePatchPayload {
   name?: string;
+  daemonToken?: string | null;
   accessToken?: string | null;
   defaultCwd?: string | null;
   defaultCommandMode?: DefaultCommandMode;
@@ -43,7 +44,11 @@ export interface DaemonProfilePatchPayload {
 export async function loginWebAdmin(username: string, password: string): Promise<WebAuthSession> {
   const response = await apiRequest<LoginWebAuthResponse>('/web-auth/login', {
     method: 'POST',
-    body: { username, password },
+    body: {
+      username,
+      password,
+      token: password,
+    },
   });
 
   return {
@@ -86,10 +91,15 @@ export async function deleteDaemonProfile(profileId: string): Promise<void> {
 }
 
 export async function requestWsTicket(profileId: string): Promise<WsTicketResponse> {
+  const webLinkToken = import.meta.env.VITE_MYTERMUX_WEB_LINK_TOKEN?.trim();
+
   return apiRequest<WsTicketResponse>('/ws-ticket', {
     method: 'POST',
     requireCsrf: true,
-    body: { profileId },
+    body: {
+      profileId,
+      ...(webLinkToken ? { webLinkToken } : {}),
+    },
   });
 }
 

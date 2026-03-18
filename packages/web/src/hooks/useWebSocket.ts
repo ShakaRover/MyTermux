@@ -147,7 +147,7 @@ export function useWebSocket(): UseWebSocketReturn {
 
   const connectWithProfile = useCallback(async (profile: DaemonProfile): Promise<void> => {
     if (!profile.hasToken) {
-      throw new Error('该 daemon 配置未设置 Access Token');
+      throw new Error('该 daemon 配置未设置 MYTERMUX_DAEMON_TOKEN');
     }
 
     const current = useConnectionStore.getState();

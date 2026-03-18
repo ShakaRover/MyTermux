@@ -36,7 +36,7 @@ pnpm --filter @mytermux/web dev
 ### 2.2 Web 登录与管理
 
 1. 打开 `http://localhost:5173/login`
-2. 使用管理员账号登录
+2. 使用 `MYTERMUX_WEB_TOKEN`（或兼容模式管理员账号）登录
 3. 在 `/daemons` 验证在线 daemon 自动生成 profile
 4. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）
 5. 让 daemon 离线，验证 profile 保留且支持手动删除
@@ -71,6 +71,8 @@ rg -n --glob '!node_modules' 'token_auth|token_ack|mytermux-|mytermux_web_sessio
 - [ ] `build/typecheck/test` 全绿
 - [ ] Web 未登录不可操作 daemon 与会话
 - [ ] 登录后可查看在线 daemon 与 profile 并连接
+- [ ] `MYTERMUX_WEB_LINK_TOKEN` 开启时，缺失或错误 token 会拒绝 ws-ticket
+- [ ] `MYTERMUX_DAEMON_LINK_TOKEN` 开启时，daemon 链接会被校验
 - [ ] ws-ticket 过期/复用会被拒绝
 - [ ] 会话列表显示 PID
 - [ ] 移动端快捷栏按条件显示且可配置

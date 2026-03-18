@@ -7,13 +7,14 @@ describe('WsTicketService', () => {
     const ticket = service.issue({
       profileId: 'profile-1',
       daemonId: 'daemon-1',
-      accessToken: 'mytermux-token',
+      daemonToken: 'mytermux-token',
     });
 
     const first = service.consume(ticket.ticket);
     const second = service.consume(ticket.ticket);
 
     expect(first?.profileId).toBe('profile-1');
+    expect(first?.daemonToken).toBe('mytermux-token');
     expect(first?.accessToken).toBe('mytermux-token');
     expect(second).toBeNull();
   });
@@ -26,7 +27,7 @@ describe('WsTicketService', () => {
 
     const ticket = service.issue({
       profileId: 'profile-2',
-      accessToken: 'mytermux-token-2',
+      daemonToken: 'mytermux-token-2',
     });
 
     vi.setSystemTime(now + 61_000);

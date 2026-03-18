@@ -12,9 +12,16 @@ MyTermux 已切换为：
 ## 2. 核心链路
 
 1. Relay 提供 Web Auth、Daemon 管理 API、ws-ticket、WebSocket 中继
-2. Daemon 向 Relay 注册并提供 Access Token
+2. Daemon 向 Relay 注册并提供 `MYTERMUX_DAEMON_TOKEN`
 3. Web 登录后按在线 daemon 自动生成 profile；在线可编辑，离线 profile 保留并支持手动删除
 4. 应用层会话消息走 E2E 加密
+
+Token 定义：
+
+- `MYTERMUX_WEB_TOKEN`：Web 登录授权 token（Web 服务配置）
+- `MYTERMUX_WEB_LINK_TOKEN`：Web -> Relay 链接前置 token（Relay 配置）
+- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon -> Relay 链接前置 token（Relay 配置）
+- `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token（Daemon 配置）
 
 ## 3. 目录结构
 
@@ -66,6 +73,6 @@ pnpm turbo run clean
 
 ## 8. 调试建议
 
-- 登录问题：检查 `RELAY_ADMIN_*`、`RELAY_WEB_MASTER_KEY`、`relay.db`
+- 登录问题：优先检查 `MYTERMUX_WEB_TOKEN`；兼容模式再检查 `RELAY_ADMIN_*`、`RELAY_WEB_MASTER_KEY`
 - ws 连接问题：先看 `/api/ws-ticket` 再看 `/ws` 日志
-- daemon 连接问题：检查 profile token 与 daemon 在线状态
+- daemon 连接问题：检查 `MYTERMUX_DAEMON_LINK_TOKEN`、`MYTERMUX_DAEMON_TOKEN` 与 daemon 在线状态

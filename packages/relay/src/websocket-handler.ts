@@ -18,7 +18,11 @@ import type { WsTicketPayload, WsTicketService } from './auth/ws-ticket.js';
 interface RegisterPayload {
   deviceType: DeviceType;
   publicKey: string;
-  /** daemon 注册时携带的 Access Token */
+  /** daemon 注册链路 Token（MYTERMUX_DAEMON_LINK_TOKEN） */
+  daemonLinkToken?: string;
+  /** daemon 注册时携带的业务 Token（MYTERMUX_DAEMON_TOKEN） */
+  daemonToken?: string;
+  /** 兼容旧字段：Access Token */
   accessToken?: string;
 }
 
@@ -26,8 +30,16 @@ interface RegisterPayload {
 interface TokenAuthPayload {
   deviceType: DeviceType;
   publicKey: string;
-  /** Access Token（用于客户端认证连接 daemon） */
+  /** daemon 业务 Token（MYTERMUX_DAEMON_TOKEN） */
+  daemonToken?: string;
+  /** 兼容旧字段：Access Token */
   accessToken?: string;
+}
+
+/** WebSocket 处理器安全配置 */
+interface WebSocketHandlerSecurityOptions {
+  /** Daemon 连接 Relay 前置链路 Token（配置于 Relay） */
+  daemonLinkToken?: string;
 }
 
 /** WebSocket 连接上下文 */
@@ -44,16 +56,23 @@ export class WebSocketHandler {
   private deviceRegistry: DeviceRegistry;
   private messageRouter: MessageRouter;
   private wsTicketService: WsTicketService;
+  private daemonLinkToken: string | undefined;
 
   /** WebSocket → deviceId 反向映射（用于连接关闭时查找） */
   private wsToDeviceId: Map<WebSocket, string> = new Map();
   /** WebSocket 连接上下文（ticket / 校验状态） */
   private wsContexts: Map<WebSocket, ConnectionContext> = new Map();
 
-  constructor(deviceRegistry: DeviceRegistry, messageRouter: MessageRouter, wsTicketService: WsTicketService) {
+  constructor(
+    deviceRegistry: DeviceRegistry,
+    messageRouter: MessageRouter,
+    wsTicketService: WsTicketService,
+    securityOptions: WebSocketHandlerSecurityOptions = {},
+  ) {
     this.deviceRegistry = deviceRegistry;
     this.messageRouter = messageRouter;
     this.wsTicketService = wsTicketService;
+    this.daemonLinkToken = securityOptions.daemonLinkToken?.trim() || undefined;
   }
 
   /**
@@ -157,6 +176,10 @@ export class WebSocketHandler {
     if (payload.deviceType === 'client' && !this.ensureClientTicket(ws)) {
       return;
     }
+    // daemon 必须通过 daemon link token 准入（如果 Relay 开启该策略）
+    if (payload.deviceType === 'daemon' && !this.ensureDaemonLinkToken(ws, payload.daemonLinkToken)) {
+      return;
+    }
 
     const deviceId = message.from;
 
@@ -170,13 +193,15 @@ export class WebSocketHandler {
     // 如果同一 deviceId 已被另一个 ws 注册（重连场景），清理旧 ws 的映射
     this.cleanupOldWsMapping(deviceId, ws);
 
+    const daemonToken = payload.daemonToken ?? payload.accessToken;
+
     // 注册设备（包含公钥和可选的 accessToken）
     this.deviceRegistry.registerDevice(
       ws,
       deviceId,
       payload.deviceType,
       payload.publicKey,
-      payload.accessToken
+      daemonToken
     );
     this.wsToDeviceId.set(ws, deviceId);
 
@@ -236,26 +261,27 @@ export class WebSocketHandler {
 
     // 使用 Access Token 验证并建立认证关系
     const context = this.wsContexts.get(ws);
-    const ticketAccessToken = context?.ticketPayload?.accessToken;
-    if (ticketAccessToken && payload.accessToken && payload.accessToken !== ticketAccessToken) {
-      this.sendError(ws, 'TOKEN_MISMATCH', 'Access Token 与 ws ticket 不一致');
+    const ticketDaemonToken = context?.ticketPayload?.daemonToken ?? context?.ticketPayload?.accessToken;
+    const payloadDaemonToken = payload.daemonToken ?? payload.accessToken;
+    if (ticketDaemonToken && payloadDaemonToken && payloadDaemonToken !== ticketDaemonToken) {
+      this.sendError(ws, 'TOKEN_MISMATCH', 'MYTERMUX_DAEMON_TOKEN 与 ws ticket 不一致');
       this.deviceRegistry.unregisterDevice(clientId);
       this.wsToDeviceId.delete(ws);
-      ws.close(4002, 'Access Token 与 ws ticket 不一致');
+      ws.close(4002, 'MYTERMUX_DAEMON_TOKEN 与 ws ticket 不一致');
       return;
     }
 
-    const accessToken = ticketAccessToken ?? payload.accessToken;
+    const daemonToken = ticketDaemonToken ?? payloadDaemonToken;
 
-    if (!accessToken) {
-      this.sendError(ws, 'TOKEN_REQUIRED', '缺少 Access Token');
+    if (!daemonToken) {
+      this.sendError(ws, 'TOKEN_REQUIRED', '缺少 MYTERMUX_DAEMON_TOKEN');
       this.deviceRegistry.unregisterDevice(clientId);
       this.wsToDeviceId.delete(ws);
-      ws.close(4002, '缺少 Access Token');
+      ws.close(4002, '缺少 MYTERMUX_DAEMON_TOKEN');
       return;
     }
 
-    const daemonId = this.deviceRegistry.validateAccessToken(accessToken, clientId);
+    const daemonId = this.deviceRegistry.validateAccessToken(daemonToken, clientId);
 
     if (daemonId) {
       // 获取 daemon 的公钥
@@ -286,7 +312,7 @@ export class WebSocketHandler {
 
       const ackPayload = JSON.stringify({
         success: false,
-        error: 'Access Token 无效或 Daemon 未连接',
+        error: 'MYTERMUX_DAEMON_TOKEN 无效或 Daemon 未连接',
       });
       const ack = createTransportMessage('token_ack', 'relay', ackPayload, clientId);
       ws.send(JSON.stringify(ack));
@@ -444,6 +470,23 @@ export class WebSocketHandler {
 
     context.clientTicketValidated = true;
     context.ticketPayload = consumed;
+    return true;
+  }
+
+  /**
+   * 校验 daemon link token（可选策略）
+   */
+  private ensureDaemonLinkToken(ws: WebSocket, daemonLinkToken?: string): boolean {
+    if (!this.daemonLinkToken) {
+      return true;
+    }
+
+    if ((daemonLinkToken ?? '').trim() !== this.daemonLinkToken) {
+      this.sendError(ws, 'DAEMON_LINK_TOKEN_INVALID', 'Daemon Link Token 无效');
+      ws.close(4006, 'Daemon Link Token 无效');
+      return false;
+    }
+
     return true;
   }
 

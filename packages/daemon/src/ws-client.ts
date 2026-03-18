@@ -29,6 +29,8 @@ export interface WsClientOptions {
   publicKey: string;
   /** Access Token（daemon 注册时携带） */
   accessToken?: string;
+  /** daemon 连接 Relay 链路 token（MYTERMUX_DAEMON_LINK_TOKEN） */
+  daemonLinkToken?: string;
   /** 初始重连延迟（毫秒） */
   initialReconnectDelay?: number;
   /** 最大重连延迟（毫秒） */
@@ -65,7 +67,8 @@ export interface WsClientEvents {
  */
 export class WsClient extends EventEmitter {
   private ws: WebSocket | null = null;
-  private readonly options: Required<Omit<WsClientOptions, 'accessToken'>> & Pick<WsClientOptions, 'accessToken'>;
+  private readonly options: Required<Omit<WsClientOptions, 'accessToken' | 'daemonLinkToken'>> &
+    Pick<WsClientOptions, 'accessToken' | 'daemonLinkToken'>;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -213,6 +216,10 @@ export class WsClient extends EventEmitter {
 
     if (this.options.accessToken) {
       payload.accessToken = this.options.accessToken;
+      payload.daemonToken = this.options.accessToken;
+    }
+    if (this.options.daemonLinkToken) {
+      payload.daemonLinkToken = this.options.daemonLinkToken;
     }
 
     this.send('register', JSON.stringify(payload));

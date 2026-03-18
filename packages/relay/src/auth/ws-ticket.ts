@@ -8,6 +8,9 @@ export interface WsTicketPayload {
   ticket: string;
   profileId: string;
   daemonId?: string | null;
+  /** 标准命名：MYTERMUX_DAEMON_TOKEN */
+  daemonToken: string;
+  /** 兼容旧字段：Access Token */
   accessToken: string;
   expiresAt: number;
   createdAt: number;
@@ -17,7 +20,7 @@ export interface WsTicketPayload {
 export class WsTicketService {
   private readonly tickets = new Map<string, WsTicketPayload>();
 
-  issue(input: { profileId: string; daemonId?: string | null; accessToken: string }): WsTicketPayload {
+  issue(input: { profileId: string; daemonId?: string | null; daemonToken: string }): WsTicketPayload {
     this.pruneExpired();
 
     const now = Date.now();
@@ -25,7 +28,8 @@ export class WsTicketService {
     const payload: WsTicketPayload = {
       ticket,
       profileId: input.profileId,
-      accessToken: input.accessToken,
+      daemonToken: input.daemonToken,
+      accessToken: input.daemonToken,
       createdAt: now,
       expiresAt: now + WS_TICKET_TTL_MS,
       ...(input.daemonId !== undefined && { daemonId: input.daemonId }),

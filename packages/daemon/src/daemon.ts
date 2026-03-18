@@ -45,6 +45,8 @@ class CryptoError extends Error {
 export interface DaemonOptions {
   /** 中继服务器地址 */
   relayUrl: string;
+  /** daemon 连接 Relay 链路 token（MYTERMUX_DAEMON_LINK_TOKEN） */
+  daemonLinkToken?: string;
 }
 
 /** Daemon 事件 */
@@ -118,6 +120,7 @@ export class Daemon extends EventEmitter {
     const wsUrl = this.options.relayUrl.endsWith('/ws')
       ? this.options.relayUrl
       : `${this.options.relayUrl.replace(/\/$/, '')}/ws`;
+    const daemonLinkToken = this.options.daemonLinkToken?.trim();
 
     this.wsClient = new WsClient({
       url: wsUrl,
@@ -125,6 +128,7 @@ export class Daemon extends EventEmitter {
       deviceId: this.authManager.deviceId,
       publicKey: this.authManager.publicKey,
       accessToken: this.authManager.accessToken,
+      ...(daemonLinkToken ? { daemonLinkToken } : {}),
     });
 
     // 设置事件监听

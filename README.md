@@ -6,6 +6,13 @@ MyTermux 是面向终端场景的 **Web 远程终端**：
 - relay 负责设备中继、Web 登录认证与 daemon 管理 API
 - web 登录后管理 daemon profile，并通过 ws-ticket 连接会话
 
+Token 约定：
+
+- `MYTERMUX_WEB_TOKEN`：Web 登录授权 token
+- `MYTERMUX_WEB_LINK_TOKEN`：Web 前端申请 Relay 会话前置 token
+- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 前置 token
+- `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token
+
 仓库地址：`<repository-url>`
 
 ## 当前架构

@@ -9,6 +9,15 @@ MyTermux 协议分为两层：
 
 另外，Relay 提供 Web 管理 API（登录、daemon profile、偏好配置、ws-ticket）。
 
+协议流转图请见：[SERVICE_PROTOCOL_FLOW.md](./SERVICE_PROTOCOL_FLOW.md)。
+
+## 0. Token 定义
+
+- `MYTERMUX_WEB_TOKEN`：Web 前端登录授权使用，保存在 Web 服务配置中（Relay 开启该变量后，登录接口按 token 校验）。
+- `MYTERMUX_WEB_LINK_TOKEN`：Web 前端申请 WS 链接授权使用，必须授权成功才可连接 Relay，保存在 Relay 配置中。
+- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 的链路授权 token，必须授权成功才可连接，保存在 Relay 配置中。
+- `MYTERMUX_DAEMON_TOKEN`：Web 前端操控 Daemon 的业务授权 token，保存在 Daemon 配置中（`auth.json`）。
+
 ## 1. Web 认证与安全
 
 ### 1.1 Cookie 与 CSRF
@@ -31,12 +40,16 @@ MyTermux 协议分为两层：
 
 #### `POST /api/web-auth/login`
 
+- 若配置了 `MYTERMUX_WEB_TOKEN`：优先按 token 模式登录（请求体 `token` 字段，兼容 `password` 传入）。
+- 若未配置 `MYTERMUX_WEB_TOKEN`：按用户名/密码模式登录（`RELAY_ADMIN_*`）。
+
 请求：
 
 ```json
 {
   "username": "admin",
-  "password": "******"
+  "password": "******",
+  "token": "my-web-token"
 }
 ```
 
@@ -88,12 +101,14 @@ MyTermux 协议分为两层：
 
 - 需要登录 + CSRF
 - 请求体必须带 `profileId`
+- 若 Relay 配置了 `MYTERMUX_WEB_LINK_TOKEN`，请求体必须携带一致的 `webLinkToken`
 
 请求：
 
 ```json
 {
-  "profileId": "profile-uuid"
+  "profileId": "profile-uuid",
+  "webLinkToken": "relay-web-link-token"
 }
 ```
 
@@ -221,13 +236,15 @@ interface TransportMessage {
 
 ### 3.2 `register`
 
-- daemon 注册时可带 Access Token
+- daemon 注册时可带：
+  - `daemonLinkToken`（对应 `MYTERMUX_DAEMON_LINK_TOKEN`，用于连接 Relay 授权）
+  - `daemonToken`（对应 `MYTERMUX_DAEMON_TOKEN`，兼容旧字段 `accessToken`）
 - client 注册路径要求已通过 ws-ticket 准入
 
 ### 3.3 `token_auth`
 
 - client 发起 daemon 认证
-- token 可由 payload 传递，或由 ws-ticket 绑定的 profile token 注入
+- daemon token 可由 payload 传递（`daemonToken`，兼容旧字段 `accessToken`），或由 ws-ticket 注入
 
 ### 3.4 `token_ack`
 

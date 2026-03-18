@@ -36,8 +36,10 @@ export interface AuthenticatedClient {
 interface AuthData {
   /** Daemon 设备 ID */
   deviceId: string;
-  /** Access Token（客户端使用此 Token 连接） */
-  accessToken: string;
+  /** 标准命名：MYTERMUX_DAEMON_TOKEN（客户端使用此 Token 连接） */
+  daemonToken: string;
+  /** 兼容旧字段：Access Token */
+  accessToken?: string;
   /** 本地公钥 */
   publicKey: string;
   /** 本地私钥（导出格式） */
@@ -82,11 +84,22 @@ export async function readAccessToken(): Promise<{ token: string; migrated: bool
   const data = JSON.parse(content) as Record<string, unknown>;
 
   let migrated = false;
+  const daemonToken = typeof data.daemonToken === 'string' ? data.daemonToken : '';
+  const accessToken = typeof data.accessToken === 'string' ? data.accessToken : '';
+  let resolvedToken = daemonToken || accessToken;
 
-  // 兼容旧版：补充 accessToken
-  if (!data.accessToken) {
-    const { generateAccessToken } = await import('@mytermux/shared');
-    data.accessToken = generateAccessToken();
+  if (!resolvedToken) {
+    const { generateAccessToken: generateToken } = await import('@mytermux/shared');
+    resolvedToken = generateToken();
+    migrated = true;
+  }
+  if (data.daemonToken !== resolvedToken) {
+    data.daemonToken = resolvedToken;
+    migrated = true;
+  }
+  // 保留旧字段，确保历史代码与脚本兼容
+  if (data.accessToken !== resolvedToken) {
+    data.accessToken = resolvedToken;
     migrated = true;
   }
 
@@ -95,7 +108,7 @@ export async function readAccessToken(): Promise<{ token: string; migrated: bool
     await fs.writeFile(AUTH_DATA_FILE, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
   }
 
-  return { token: data.accessToken as string, migrated };
+  return { token: resolvedToken, migrated };
 }
 
 // ============================================================================
@@ -143,7 +156,7 @@ export class AuthManager extends EventEmitter {
     if (existingData) {
       // 恢复现有数据
       this._deviceId = existingData.deviceId;
-      this._accessToken = existingData.accessToken;
+      this._accessToken = existingData.daemonToken;
       this.authenticatedClients = existingData.authenticatedClients;
 
       // 从 JWK 导入私钥
@@ -372,16 +385,23 @@ export class AuthManager extends EventEmitter {
     }
 
     // 文件存在但解析失败时，让错误向上传播
-    const data = JSON.parse(content) as AuthData;
+    const raw = JSON.parse(content) as Record<string, unknown>;
+    const daemonToken = typeof raw.daemonToken === 'string' ? raw.daemonToken : '';
+    const accessToken = typeof raw.accessToken === 'string' ? raw.accessToken : '';
+    const resolvedToken = daemonToken || accessToken || generateAccessToken();
 
-    // 兼容旧版数据
-    if (!data.accessToken) {
-      data.accessToken = generateAccessToken();
-    }
-    if (!Array.isArray(data.authenticatedClients)) {
-      data.authenticatedClients = [];
-    }
-    return data;
+    const authenticatedClients = Array.isArray(raw.authenticatedClients)
+      ? raw.authenticatedClients as AuthenticatedClient[]
+      : [];
+
+    return {
+      deviceId: String(raw.deviceId ?? ''),
+      daemonToken: resolvedToken,
+      accessToken: resolvedToken,
+      publicKey: String(raw.publicKey ?? ''),
+      privateKeyJwk: raw.privateKeyJwk as JsonWebKey,
+      authenticatedClients,
+    };
   }
 
   /**
@@ -400,6 +420,7 @@ export class AuthManager extends EventEmitter {
 
     const data: AuthData = {
       deviceId: this._deviceId,
+      daemonToken: this._accessToken,
       accessToken: this._accessToken,
       publicKey: this.keyPair.publicKey,
       privateKeyJwk,
