@@ -8,7 +8,6 @@ MyTermux 是面向终端场景的 **Web 远程终端**：
 
 Token 约定：
 
-- `MYTERMUX_WEB_TOKEN`：Web 登录授权 token
 - `MYTERMUX_WEB_LINK_TOKEN`：Web 前端申请 Relay 会话前置 token
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 前置 token
 - `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token
@@ -53,18 +52,11 @@ pnpm turbo run build
 ```bash
 cp .env.example .env
 # 编辑 .env，至少填写:
-# MYTERMUX_WEB_TOKEN
+# RELAY_ADMIN_USERNAME
+# RELAY_ADMIN_PASSWORD_HASH
 # MYTERMUX_WEB_LINK_TOKEN
 # MYTERMUX_DAEMON_LINK_TOKEN
 # RELAY_WEB_MASTER_KEY
-```
-
-兼容模式（不用 `MYTERMUX_WEB_TOKEN`，改用用户名密码）：
-
-```bash
-# 写入 .env
-RELAY_ADMIN_USERNAME=admin
-RELAY_ADMIN_PASSWORD_HASH='<scrypt-hash>'
 ```
 
 2. 启动本地测试（会同时启动 relay + daemon + web）

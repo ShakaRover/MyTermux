@@ -13,7 +13,6 @@ MyTermux 协议分为两层：
 
 ## 0. Token 定义
 
-- `MYTERMUX_WEB_TOKEN`：Web 前端登录授权使用，保存在 Web 服务配置中（Relay 开启该变量后，登录接口按 token 校验）。
 - `MYTERMUX_WEB_LINK_TOKEN`：Web 前端申请 WS 链接授权使用，必须授权成功才可连接 Relay，保存在 Relay 配置中。
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 的链路授权 token，必须授权成功才可连接，保存在 Relay 配置中。
 - `MYTERMUX_DAEMON_TOKEN`：Web 前端操控 Daemon 的业务授权 token，保存在 Daemon 配置中（`auth.json`）。
@@ -40,16 +39,14 @@ MyTermux 协议分为两层：
 
 #### `POST /api/web-auth/login`
 
-- 若配置了 `MYTERMUX_WEB_TOKEN`：优先按 token 模式登录（请求体 `token` 字段，兼容 `password` 传入）。
-- 若未配置 `MYTERMUX_WEB_TOKEN`：按用户名/密码模式登录（`RELAY_ADMIN_*`）。
+- 按用户名/密码模式登录（`RELAY_ADMIN_*`）。
 
 请求：
 
 ```json
 {
   "username": "admin",
-  "password": "******",
-  "token": "my-web-token"
+  "password": "******"
 }
 ```
 

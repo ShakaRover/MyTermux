@@ -25,17 +25,18 @@ pnpm turbo run build
 
 ## 3.1 必要环境变量
 
-- `MYTERMUX_WEB_TOKEN`：Web 登录 token（推荐开启；开启后登录按 token 校验）
+- `RELAY_ADMIN_USERNAME`：Web 管理端登录用户名
+- `RELAY_ADMIN_PASSWORD_HASH`：Web 管理端登录密码哈希（scrypt 格式）
 - `MYTERMUX_WEB_LINK_TOKEN`：Web 前端申请 ws-ticket 前置 token（推荐开启）
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 前置 token（推荐开启）
 - `RELAY_WEB_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
 - `RELAY_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/relay.db`）
-- 兼容模式可选：`RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH`
 
 示例：
 
 ```bash
-export MYTERMUX_WEB_TOKEN='<web-login-token>'
+export RELAY_ADMIN_USERNAME='admin'
+export RELAY_ADMIN_PASSWORD_HASH='<scrypt-hash>'
 export MYTERMUX_WEB_LINK_TOKEN='<web-link-token>'
 export MYTERMUX_DAEMON_LINK_TOKEN='<daemon-link-token>'
 export RELAY_WEB_MASTER_KEY='<32-byte-random-secret>'
@@ -153,7 +154,8 @@ Restart=always
 RestartSec=3
 User=mytermux
 Environment=NODE_ENV=production
-Environment=MYTERMUX_WEB_TOKEN=<web-login-token>
+Environment=RELAY_ADMIN_USERNAME=admin
+Environment=RELAY_ADMIN_PASSWORD_HASH=<scrypt-hash>
 Environment=MYTERMUX_WEB_LINK_TOKEN=<web-link-token>
 Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
 Environment=RELAY_WEB_MASTER_KEY=<master-key>
@@ -188,7 +190,7 @@ WantedBy=multi-user.target
 
 - 本地开发/测试不要配置证书，统一走 HTTP/WS
 - 生产必须由 Nginx 提供 TLS，外部流量统一走 HTTPS/WSS
-- 不要在生产环境使用默认管理员配置（建议启用 `MYTERMUX_WEB_TOKEN`）
+- 不要在生产环境使用默认管理员配置（必须配置 `RELAY_ADMIN_PASSWORD_HASH`）
 - `RELAY_WEB_MASTER_KEY` 必须高强度随机并妥善保管
 - `MYTERMUX_WEB_LINK_TOKEN` / `MYTERMUX_DAEMON_LINK_TOKEN` 仅通过可信渠道分发
 - `MYTERMUX_DAEMON_TOKEN` 仅通过可信渠道分发，并定期轮换

@@ -26,7 +26,6 @@ export interface RelayRuntime {
 export function initializeRelayRuntime(): RelayRuntime {
   const dbPath = process.env['RELAY_DB_PATH'] || path.join(os.homedir(), '.mytermux', 'relay.db');
   const masterKey = process.env['RELAY_WEB_MASTER_KEY'] || 'mytermux-dev-master-key';
-  const webToken = process.env['MYTERMUX_WEB_TOKEN']?.trim() || undefined;
   const webLinkToken = process.env['MYTERMUX_WEB_LINK_TOKEN']?.trim() || undefined;
   const daemonLinkToken = process.env['MYTERMUX_DAEMON_LINK_TOKEN']?.trim() || undefined;
 
@@ -58,7 +57,6 @@ export function initializeRelayRuntime(): RelayRuntime {
     sessionService,
     loginGuard,
     wsTicketService,
-    ...(webToken ? { webToken } : {}),
     ...(webLinkToken ? { webLinkToken } : {}),
   });
 

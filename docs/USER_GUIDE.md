@@ -29,7 +29,8 @@ cp .env.example .env
 
 编辑 `.env`，至少填写：
 
-- `MYTERMUX_WEB_TOKEN`
+- `RELAY_ADMIN_USERNAME`
+- `RELAY_ADMIN_PASSWORD_HASH`
 - `MYTERMUX_WEB_LINK_TOKEN`
 - `MYTERMUX_DAEMON_LINK_TOKEN`
 - `RELAY_WEB_MASTER_KEY`
@@ -48,7 +49,7 @@ pnpm start:local:test
 
 说明：本地运行不需要证书，不要配置 `TLS_CERT` / `TLS_KEY`。
 
-> 推荐优先配置 `MYTERMUX_WEB_TOKEN`；未配置时可回退管理员账号/密码模式。
+> Web 管理端统一使用管理员账号密码登录。
 
 ### 3.3 分别启动（可选）
 
@@ -123,8 +124,7 @@ pnpm --filter @mytermux/relay status
 
 ### 8.1 Relay 状态正常但 Web 登录失败
 
-- 优先检查 `MYTERMUX_WEB_TOKEN` 是否匹配
-- 兼容模式再检查管理员环境变量（见 `docs/DEPLOYMENT.md`）
+- 优先检查 `RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH` 是否正确
 - 查看 `relay.log`
 
 ### 8.2 Daemon 在线但无法连接

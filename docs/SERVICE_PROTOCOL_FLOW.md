@@ -36,9 +36,8 @@ sequenceDiagram
   participant R as Relay
   participant DB as relay.db
 
-  W->>R: POST /api/web-auth/login (token 或 username/password)
-  R->>R: 校验 MYTERMUX_WEB_TOKEN（开启时）
-  R->>DB: 校验密码或 token + 暴力破解策略
+  W->>R: POST /api/web-auth/login (username/password)
+  R->>DB: 校验用户名密码 + 暴力破解策略
   DB-->>R: 通过
   R-->>W: 200 + session cookie + csrf cookie
 

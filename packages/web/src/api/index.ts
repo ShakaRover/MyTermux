@@ -47,7 +47,6 @@ export async function loginWebAdmin(username: string, password: string): Promise
     body: {
       username,
       password,
-      token: password,
     },
   });
 

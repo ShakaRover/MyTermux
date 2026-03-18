@@ -46,7 +46,7 @@ bash ./scripts/web/start-fg.sh
 ### 2.2 Web 登录与管理
 
 1. 打开 `http://127.0.0.1:62100/login`
-2. 使用 `MYTERMUX_WEB_TOKEN`（或兼容模式管理员账号）登录
+2. 使用管理员账号密码（`RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH`）登录
 3. 在 `/daemons` 验证在线 daemon 自动生成 profile
 4. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）
 5. 让 daemon 离线，验证 profile 保留且支持手动删除

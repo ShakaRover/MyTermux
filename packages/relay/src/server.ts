@@ -7,7 +7,7 @@
  * - WebSocket 升级: GET /ws
  */
 
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import type { DefaultCommandMode, WebShortcut } from '@mytermux/shared';
@@ -31,8 +31,6 @@ export interface ServerOptions {
   loginGuard?: LoginBruteforceGuard;
   /** ws-ticket 签发器 */
   wsTicketService?: WsTicketService;
-  /** Web 登录 token（MYTERMUX_WEB_TOKEN） */
-  webToken?: string;
   /** Web -> Relay 链接 token（MYTERMUX_WEB_LINK_TOKEN） */
   webLinkToken?: string;
 }
@@ -77,24 +75,15 @@ export function createServer(options: ServerOptions = {}) {
       return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'Web Auth 未初始化' }, 503);
     }
 
-    const body = await parseJson<{ username?: string; password?: string; token?: string }>(c);
+    const body = await parseJson<{ username?: string; password?: string }>(c);
     const username = body?.username?.trim();
     const password = body?.password?.trim() ?? '';
-    const token = body?.token?.trim() ?? '';
-    const tokenModeEnabled = !!options.webToken;
-    const loginIdentity = tokenModeEnabled ? '__web_token__' : username;
-    const loginSecret = tokenModeEnabled ? (token || password) : password;
-
-    if (tokenModeEnabled) {
-      if (!loginSecret) {
-        return c.json({ error: 'INVALID_INPUT', message: '登录 Token 不能为空' }, 400);
-      }
-    } else if (!username || !password) {
+    if (!username || !password) {
       return c.json({ error: 'INVALID_INPUT', message: '用户名和密码不能为空' }, 400);
     }
 
     const ip = getClientIp(c);
-    const guard = loginGuard.check(ip, loginIdentity ?? '__unknown__');
+    const guard = loginGuard.check(ip, username);
     if (!guard.allowed) {
       return c.json(
         {
@@ -106,27 +95,19 @@ export function createServer(options: ServerOptions = {}) {
       );
     }
 
-    const passwordMatched = tokenModeEnabled
-      ? safeCompareToken(loginSecret, options.webToken ?? '')
-      : (() => {
-          const admin = storage.getAdminByUsername(username ?? '');
-          return admin ? safeVerifyPassword(password, admin.passwordHash) : false;
-        })();
+    const admin = storage.getAdminByUsername(username);
+    const passwordMatched = admin ? safeVerifyPassword(password, admin.passwordHash) : false;
 
     if (!passwordMatched) {
-      loginGuard.recordFailure(ip, loginIdentity ?? '__unknown__');
-      return c.json({ error: 'AUTH_FAILED', message: tokenModeEnabled ? '登录 Token 错误' : '用户名或密码错误' }, 401);
+      loginGuard.recordFailure(ip, username);
+      return c.json({ error: 'AUTH_FAILED', message: '用户名或密码错误' }, 401);
     }
 
-    const resolvedUsername = tokenModeEnabled
-      ? (username || 'web-token-user')
-      : (username ?? 'admin');
-
-    loginGuard.recordSuccess(ip, loginIdentity ?? resolvedUsername);
+    loginGuard.recordSuccess(ip, username);
 
     const session = sessionService.createSession(
       c,
-      resolvedUsername,
+      username,
       ip,
       c.req.header('user-agent') ?? null,
     );
@@ -134,7 +115,7 @@ export function createServer(options: ServerOptions = {}) {
     return c.json({
       success: true,
       authenticated: true,
-      username: resolvedUsername,
+      username,
       expiresAt: session.expiresAt,
     });
   });
@@ -406,20 +387,6 @@ function createRequireSessionMiddleware(
 function safeVerifyPassword(password: string, hashString: string): boolean {
   try {
     return verifyPassword(password, hashString);
-  } catch {
-    return false;
-  }
-}
-
-/** 安全包装 Token 校验 */
-function safeCompareToken(input: string, expected: string): boolean {
-  try {
-    const inputBuffer = Buffer.from(input, 'utf-8');
-    const expectedBuffer = Buffer.from(expected, 'utf-8');
-    if (inputBuffer.length !== expectedBuffer.length) {
-      return false;
-    }
-    return timingSafeEqual(inputBuffer, expectedBuffer);
   } catch {
     return false;
   }

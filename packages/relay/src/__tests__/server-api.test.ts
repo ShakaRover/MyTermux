@@ -20,7 +20,6 @@ interface TestContext {
 }
 
 interface CreateTestContextOptions {
-  webToken?: string;
   webLinkToken?: string;
 }
 
@@ -54,7 +53,6 @@ function createTestContext(options: CreateTestContextOptions = {}): TestContext 
     sessionService,
     loginGuard,
     wsTicketService,
-    ...(options.webToken ? { webToken: options.webToken } : {}),
     ...(options.webLinkToken ? { webLinkToken: options.webLinkToken } : {}),
   });
 
@@ -108,18 +106,13 @@ function createMockWs() {
 
 async function loginAndGetAuth(
   app: ReturnType<typeof createServer>,
-  options: { webToken?: string } = {},
 ): Promise<{ cookies: string; csrfToken: string }> {
-  const loginPayload = options.webToken
-    ? { token: options.webToken }
-    : { username: 'admin', password: 'secret-pass' };
-
   const loginResponse = await app.request('/api/web-auth/login', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
     },
-    body: JSON.stringify(loginPayload),
+    body: JSON.stringify({ username: 'admin', password: 'secret-pass' }),
   });
 
   expect(loginResponse.status).toBe(200);
@@ -200,11 +193,18 @@ describe('Relay API integration', () => {
     expect(wsTicketService.consume(wsTicketBody.ticket)).toBeNull();
   });
 
-  it('should login with MYTERMUX_WEB_TOKEN when enabled', async () => {
-    const { app } = createTestContext({ webToken: 'web-login-token' });
+  it('should reject token-only login payload', async () => {
+    const { app } = createTestContext();
 
-    const { cookies } = await loginAndGetAuth(app, { webToken: 'web-login-token' });
-    expect(cookies.includes('mytermux_web_session=')).toBe(true);
+    const response = await app.request('/api/web-auth/login', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ token: 'web-login-token' }),
+    });
+
+    expect(response.status).toBe(400);
   });
 
   it('should reject protected api when unauthenticated', async () => {

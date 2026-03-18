@@ -18,7 +18,6 @@ MyTermux 已切换为：
 
 Token 定义：
 
-- `MYTERMUX_WEB_TOKEN`：Web 登录授权 token（Web 服务配置）
 - `MYTERMUX_WEB_LINK_TOKEN`：Web -> Relay 链接前置 token（Relay 配置）
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon -> Relay 链接前置 token（Relay 配置）
 - `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token（Daemon 配置）
@@ -41,7 +40,7 @@ packages/
 pnpm install
 pnpm turbo run build
 cp .env.example .env
-# 编辑 .env（至少填写 MYTERMUX_WEB_TOKEN / MYTERMUX_WEB_LINK_TOKEN / MYTERMUX_DAEMON_LINK_TOKEN / RELAY_WEB_MASTER_KEY）
+# 编辑 .env（至少填写 RELAY_ADMIN_USERNAME / RELAY_ADMIN_PASSWORD_HASH / MYTERMUX_WEB_LINK_TOKEN / MYTERMUX_DAEMON_LINK_TOKEN / RELAY_WEB_MASTER_KEY）
 ```
 
 启动：
@@ -109,6 +108,6 @@ pnpm turbo run clean
 
 ## 8. 调试建议
 
-- 登录问题：优先检查 `MYTERMUX_WEB_TOKEN`；兼容模式再检查 `RELAY_ADMIN_*`、`RELAY_WEB_MASTER_KEY`
+- 登录问题：优先检查 `RELAY_ADMIN_USERNAME` / `RELAY_ADMIN_PASSWORD_HASH`、`RELAY_WEB_MASTER_KEY`
 - ws 连接问题：先看 `/api/ws-ticket` 再看 `/ws` 日志
 - daemon 连接问题：检查 `MYTERMUX_DAEMON_LINK_TOKEN`、`MYTERMUX_DAEMON_TOKEN` 与 daemon 在线状态
