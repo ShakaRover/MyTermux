@@ -15,6 +15,7 @@ MyTermux 当前推荐流程：
 - Node.js >= 20
 - pnpm >= 9
 - relay 与 daemon 网络可达
+- 本地使用无证书模型（HTTP + WS）
 
 ## 3. 首次启动
 
@@ -35,6 +36,8 @@ pnpm --filter @mytermux/relay start:fg
 
 - HTTP: `http://localhost:3000`
 - WebSocket: `ws://localhost:3000/ws`
+
+说明：本地运行不需要证书，不要配置 `TLS_CERT` / `TLS_KEY`。
 
 > 推荐优先配置 `MYTERMUX_WEB_TOKEN`；未配置时可回退管理员账号/密码模式。
 
@@ -130,3 +133,8 @@ pnpm --filter @mytermux/relay status
 ## 9. 历史目录说明
 
 MyTermux 不会自动迁移或删除历史版本目录，请手动处理旧数据。
+
+## 10. 生产部署说明
+
+- 正式环境必须通过 Nginx 反向代理并启用证书。
+- 浏览器侧访问 `https://<domain>`，WebSocket 使用 `wss://<domain>/ws`。

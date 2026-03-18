@@ -35,6 +35,8 @@ packages/
 
 ## 4. 本地开发
 
+约束：本地开发与联调统一无证书模型（HTTP + WS），不要配置 `TLS_CERT` / `TLS_KEY`，不要启用 `VITE_HTTPS`。
+
 ```bash
 pnpm install
 pnpm turbo run build

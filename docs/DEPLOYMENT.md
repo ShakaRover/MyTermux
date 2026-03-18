@@ -2,12 +2,17 @@
 
 目标：部署可长期运行的 MyTermux（Relay + Daemon + Web）。
 
+## 0. 运行模型（强制约束）
+
+- 本地开发与测试：统一使用无证书模型（HTTP + WS），不配置 `TLS_CERT` / `TLS_KEY`。
+- 正式部署：必须通过 Nginx 反向代理并启用有效证书（HTTPS + WSS）。
+
 ## 1. 基础要求
 
 - Node.js >= 20
 - pnpm >= 9
 - 建议 Linux + systemd
-- 生产环境建议 HTTPS/TLS
+- 生产环境必须 HTTPS/TLS（由 Nginx 终止 TLS）
 
 ## 2. 构建
 
@@ -44,6 +49,8 @@ node -e "const {randomBytes,scryptSync}=require('node:crypto');const p=process.a
 ```
 
 ## 3.3 启动 Relay
+
+说明：生产场景下 Relay 监听内网明文端口（如 `127.0.0.1:3000`），由 Nginx 负责证书与 TLS。
 
 前台验证：
 
@@ -90,7 +97,7 @@ pnpm --filter @mytermux/web build
 
 建议与 relay 同域部署（便于 Cookie/CSRF 同域策略）。
 
-## 6. Nginx 示例
+## 6. Nginx 示例（生产必选）
 
 ```nginx
 server {
@@ -177,7 +184,8 @@ WantedBy=multi-user.target
 
 ## 8. 安全建议
 
-- Relay 必须在 TLS 环境运行
+- 本地开发/测试不要配置证书，统一走 HTTP/WS
+- 生产必须由 Nginx 提供 TLS，外部流量统一走 HTTPS/WSS
 - 不要在生产环境使用默认管理员配置（建议启用 `MYTERMUX_WEB_TOKEN`）
 - `RELAY_WEB_MASTER_KEY` 必须高强度随机并妥善保管
 - `MYTERMUX_WEB_LINK_TOKEN` / `MYTERMUX_DAEMON_LINK_TOKEN` 仅通过可信渠道分发

@@ -220,7 +220,10 @@ MyTermux 协议分为两层：
 
 ## 3. 传输层协议（WebSocket）
 
-连接地址：`ws://<host>:<port>/ws`（TLS 为 `wss://`）
+连接地址：
+
+- 本地开发/测试：`ws://<host>:<port>/ws`（无证书）
+- 生产部署：通过 Nginx 反向代理对外提供 `wss://<domain>/ws`（必须启用证书）
 
 ### 3.1 通用结构
 

@@ -34,6 +34,13 @@ Token 约定：
 
 ## 快速开始（本地）
 
+本地运行/联调/测试统一走**无证书模型**：
+
+- Relay: `http://127.0.0.1:3000`
+- WebSocket: `ws://127.0.0.1:3000/ws`
+- 不配置 `TLS_CERT` / `TLS_KEY`
+- 不启用 `VITE_HTTPS`
+
 ```bash
 pnpm install
 pnpm turbo run build
@@ -112,3 +119,4 @@ pnpm turbo run clean
 
 - 不保留旧“Web 直接输入 daemon token 登录”流程
 - 不自动迁移或删除历史版本目录
+- 生产部署必须通过 Nginx 反向代理并启用证书（HTTPS/WSS）

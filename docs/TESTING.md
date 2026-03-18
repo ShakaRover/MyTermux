@@ -25,6 +25,8 @@ pnpm --filter @mytermux/web test
 
 ## 2. 手工冒烟
 
+约束：测试环境统一无证书模型（HTTP + WS），不要配置 `TLS_CERT` / `TLS_KEY`，不要启用 `VITE_HTTPS`。
+
 ### 2.1 启动组件
 
 ```bash
@@ -69,6 +71,7 @@ rg -n --glob '!node_modules' 'token_auth|token_ack|mytermux-|mytermux_web_sessio
 ## 4. 验收清单
 
 - [ ] `build/typecheck/test` 全绿
+- [ ] 测试环境全程使用无证书模型（HTTP + WS）
 - [ ] Web 未登录不可操作 daemon 与会话
 - [ ] 登录后可查看在线 daemon 与 profile 并连接
 - [ ] `MYTERMUX_WEB_LINK_TOKEN` 开启时，缺失或错误 token 会拒绝 ws-ticket
