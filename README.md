@@ -39,27 +39,48 @@ pnpm install
 pnpm turbo run build
 ```
 
-1. 启动 relay（建议先配置管理员环境变量）
+1. 配置鉴权环境变量（推荐 token 模式）
+
+```bash
+# Relay 侧
+export MYTERMUX_WEB_TOKEN='your-web-login-token'
+export MYTERMUX_WEB_LINK_TOKEN='your-web-link-token'
+export MYTERMUX_DAEMON_LINK_TOKEN='your-daemon-link-token'
+export RELAY_WEB_MASTER_KEY='your-32-byte-random-secret'
+
+# Web 侧（用于请求 /api/ws-ticket 时携带 web link token）
+export VITE_MYTERMUX_WEB_LINK_TOKEN='your-web-link-token'
+```
+
+兼容模式（不用 `MYTERMUX_WEB_TOKEN`，改用用户名密码）：
+
+```bash
+export RELAY_ADMIN_USERNAME=admin
+export RELAY_ADMIN_PASSWORD_HASH='<scrypt-hash>'
+export RELAY_WEB_MASTER_KEY='your-32-byte-random-secret'
+```
+
+2. 启动 relay
 
 ```bash
 pnpm --filter @mytermux/relay start:fg
 ```
 
-2. 启动 daemon
+3. 启动 daemon（若启用 `MYTERMUX_DAEMON_LINK_TOKEN`，需传入同值）
 
 ```bash
-pnpm --filter @mytermux/daemon start:fg
+pnpm --filter @mytermux/daemon start:fg -- --daemon-link-token 'your-daemon-link-token'
 ```
 
-3. 启动 Web
+4. 启动 Web
 
 ```bash
 pnpm --filter @mytermux/web dev
 ```
 
-4. 打开 `http://localhost:5173`
+5. 打开 `http://localhost:5173`
 
-5. 登录 Web 管理中心后：
+6. 登录 Web 管理中心后：
 - 在线 daemon 自动生成 profile，可编辑配置（token、默认目录、默认命令）
 - 离线 profile 会保留，支持手动删除
 - 点击“连接”进入会话页面
