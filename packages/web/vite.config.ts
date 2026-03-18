@@ -6,7 +6,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 // 是否启用 HTTPS（远程部署时需要，因为 Web Crypto API 要求安全上下文）
 const enableHttps = process.env.VITE_HTTPS === 'true';
 
-// Relay 服务器地址（用于 WebSocket 代理）
+// Relay 服务器地址（用于 /api 与 /ws 代理）
 const relayTarget = process.env.VITE_RELAY_URL || 'ws://127.0.0.1:62200/ws';
 
 // 从 ws(s)://host:port/path 中提取 http(s)://host:port
@@ -29,7 +29,7 @@ export default defineConfig({
     // 支持通过环境变量配置 host 和 port
     host: process.env.VITE_HOST || '127.0.0.1',
     port: Number(process.env.VITE_PORT) || 62100,
-    // 始终代理 /ws 与 /api，保证本地开发使用同域 Cookie 会话
+    // 始终代理 /ws 与 /api，保证本地开发直连 Relay
     proxy: {
       '/ws': {
         target: extractProxyTarget(relayTarget),

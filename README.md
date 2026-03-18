@@ -1,28 +1,33 @@
 # MyTermux
 
-MyTermux 是面向终端场景的 **Web 远程终端**：
+MyTermux 是面向终端场景的 **Web 远程终端**，当前按三端职责拆分：
 
-- daemon 运行在目标主机，负责创建终端会话
-- relay 负责设备中继、Web 登录认证与 daemon 管理 API
-- web 登录后管理 daemon profile，并通过 ws-ticket 连接会话
+- `web`：本地登录与界面管理（不依赖 Relay 登录）
+- `relay`：设备中继、daemon profile 管理、ws-ticket 签发
+- `daemon`：终端会话执行与 `MYTERMUX_DAEMON_TOKEN` 管理
 
-Token 约定：
+## 职责与数据库边界
 
-- `MYTERMUX_WEB_LINK_TOKEN`：Web 前端申请 Relay 会话前置 token
-- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 前置 token
-- `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token
+- Web：浏览器本地数据库（IndexedDB，库名 `mytermux_web_db`）
+  - 存储 Web 登录账号、会话状态、快捷键与 Relay 连接配置
+- Relay：`~/.mytermux/relay.db`
+  - 仅存储 daemon profile（含加密后的 daemon token）
+- Daemon：`~/.mytermux/daemon.db`
+  - 存储 daemon 设备身份、`MYTERMUX_DAEMON_TOKEN`、已认证客户端列表
+  - 启动时会自动尝试从旧 `~/.mytermux/auth.json` 迁移
 
-仓库地址：`<repository-url>`
+## Token 约定
+
+- `MYTERMUX_WEB_LINK_TOKEN`：Web 访问 Relay 管理 API 与 ws-ticket 的链路授权 token（Relay 配置）
+- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 的链路授权 token（Relay 配置）
+- `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token（Daemon 配置）
 
 ## 当前架构
 
-- Web 登录：`HttpOnly Cookie + CSRF`
-- 防暴力破解：IP 限流 + 账号/IP 递增锁定（持久化到 SQLite）
-- Daemon 管理：在线 daemon 与已保存 profile 聚合视图
+- Web 登录：Web 本地数据库账号体系（默认 `admin` / `mytermux`，首次登录必须修改）
+- Relay 管理 API：不再提供 `/api/web-auth/*`，仅提供 daemon/profile/ws-ticket 能力
+- Relay API 鉴权：当配置 `MYTERMUX_WEB_LINK_TOKEN` 时，管理 API 需 `x-mytermux-web-link-token` 请求头
 - WebSocket 准入：`/api/ws-ticket` 一次性 ticket（60 秒）
-- 会话模型：仅 `terminal`
-- 会话信息：支持返回 `pid`
-- 默认启动命令：支持 `startupCommand`（zsh/bash/tmux/custom）
 
 ## Monorepo
 
@@ -39,17 +44,10 @@ Token 约定：
 - Relay: `http://127.0.0.1:62200`
 - Relay WebSocket: `ws://127.0.0.1:62200/ws`
 - Daemon 本地状态监听: `http://127.0.0.1:62300`
-- 不配置 `TLS_CERT` / `TLS_KEY`
-- 不启用 `VITE_HTTPS`
 
 ```bash
 pnpm install
 pnpm turbo run build
-```
-
-1. 复制环境变量样本并填写
-
-```bash
 cp .env.example .env
 # 编辑 .env，至少填写:
 # MYTERMUX_WEB_LINK_TOKEN
@@ -57,18 +55,10 @@ cp .env.example .env
 # RELAY_WEB_MASTER_KEY
 ```
 
-2. 启动本地测试（会同时启动 relay + daemon + web）
+启动本地联调：
 
 ```bash
 pnpm start:local:test
-```
-
-如需分别启动：
-
-```bash
-bash ./scripts/relay/start-fg.sh
-bash ./scripts/daemon/start-fg.sh
-bash ./scripts/web/start-fg.sh
 ```
 
 分服务脚本（每个服务 3 个）：
@@ -90,31 +80,19 @@ bash ./scripts/web/start-bg.sh
 bash ./scripts/web/stop.sh
 ```
 
-3. 打开 `http://127.0.0.1:62100`
+浏览器打开 `http://127.0.0.1:62100`：
 
-4. 登录 Web 管理中心：
-- 默认账号密码：`admin` / `mytermux`
-- 首次登录后必须先修改账号和密码
-
-5. 登录并完成账号初始化后：
-- 在线 daemon 自动生成 profile，可编辑配置（token、默认目录、默认命令）
-- 可在 Web 端配置 Relay WebSocket 地址与 `MYTERMUX_WEB_LINK_TOKEN`
-- 离线 profile 会保留，支持手动删除
-- 点击“连接”进入会话页面
+1. 用默认账号 `admin` / `mytermux` 登录
+2. 首次登录必须先修改账号密码
+3. 在 `/daemons` 配置 Relay 地址与 `MYTERMUX_WEB_LINK_TOKEN`
+4. 管理在线 daemon profile 并进入会话
 
 ## 常用命令
 
 ```bash
-# 构建
 pnpm turbo run build
-
-# 类型检查
 pnpm turbo run typecheck
-
-# 测试
 pnpm turbo run test
-
-# 清理
 pnpm turbo run clean
 ```
 
@@ -122,8 +100,9 @@ pnpm turbo run clean
 
 默认目录：`~/.mytermux`
 
-- daemon: `auth.json`, `daemon.pid`, `daemon.status`
-- relay: `relay.pid`, `relay.log`, `relay.db`
+- daemon: `daemon.db`, `daemon.pid`, `daemon.status`, `daemon.log`
+- relay: `relay.db`, `relay.pid`, `relay.log`
+- web: 浏览器 IndexedDB（`mytermux_web_db`）
 
 ## 重要说明
 

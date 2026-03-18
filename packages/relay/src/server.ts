@@ -3,20 +3,16 @@
  *
  * 功能：
  * - HTTP: Relay 健康检查与信息页
- * - API: Web 认证、Daemon Profile 管理、Web 偏好配置、ws-ticket
+ * - API: Daemon Profile 管理、ws-ticket
  * - WebSocket 升级: GET /ws
  */
 
 import { randomUUID } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
-import type { DefaultCommandMode, WebShortcut } from '@mytermux/shared';
+import type { DefaultCommandMode } from '@mytermux/shared';
 import type { DeviceRegistry } from './device-registry.js';
 import type { RelayStorage, DaemonProfilePatch } from './storage/index.js';
-import { LoginBruteforceGuard } from './auth/bruteforce.js';
-import { requireCsrfToken, requireWebSession, type AuthVariables, getClientIp } from './auth/middleware.js';
-import { hashPassword, verifyPassword } from './auth/password.js';
-import { WebSessionService } from './auth/session.js';
 import type { WsTicketService } from './auth/ws-ticket.js';
 
 /** 服务器选项 */
@@ -25,10 +21,6 @@ export interface ServerOptions {
   deviceRegistry?: DeviceRegistry;
   /** SQLite 存储层 */
   storage?: RelayStorage;
-  /** 登录会话服务 */
-  sessionService?: WebSessionService;
-  /** 暴力破解防护 */
-  loginGuard?: LoginBruteforceGuard;
   /** ws-ticket 签发器 */
   wsTicketService?: WsTicketService;
   /** Web -> Relay 链接 token（MYTERMUX_WEB_LINK_TOKEN） */
@@ -42,11 +34,9 @@ const VALID_COMMAND_MODES: DefaultCommandMode[] = ['zsh', 'bash', 'tmux', 'custo
  * 创建 Hono 应用
  */
 export function createServer(options: ServerOptions = {}) {
-  const app = new Hono<{ Variables: AuthVariables }>();
-  const requireSession = createRequireSessionMiddleware(options.sessionService);
-  const requireCredentialsUpdated = createRequireCredentialsUpdatedMiddleware(options.storage);
+  const app = new Hono();
+  const requireManagementAccess = createRequireManagementAccessMiddleware(options.webLinkToken);
 
-  // 中间件
   app.use('*', cors());
 
   // 健康检查
@@ -66,148 +56,8 @@ export function createServer(options: ServerOptions = {}) {
     return c.text('WebSocket endpoint - upgrade required', 426);
   });
 
-  // Web Auth - 登录
-  app.post('/api/web-auth/login', async (c) => {
-    const storage = options.storage;
-    const sessionService = options.sessionService;
-    const loginGuard = options.loginGuard;
-
-    if (!storage || !sessionService || !loginGuard) {
-      return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'Web Auth 未初始化' }, 503);
-    }
-
-    const body = await parseJson<{ username?: string; password?: string }>(c);
-    const username = body?.username?.trim();
-    const password = body?.password?.trim() ?? '';
-    if (!username || !password) {
-      return c.json({ error: 'INVALID_INPUT', message: '用户名和密码不能为空' }, 400);
-    }
-
-    const ip = getClientIp(c);
-    const guard = loginGuard.check(ip, username);
-    if (!guard.allowed) {
-      return c.json(
-        {
-          error: 'AUTH_THROTTLED',
-          message: '登录失败，请稍后重试',
-          retryAfterSeconds: guard.retryAfterSeconds,
-        },
-        429,
-      );
-    }
-
-    const admin = storage.getAdminByUsername(username);
-    const passwordMatched = admin ? safeVerifyPassword(password, admin.passwordHash) : false;
-
-    if (!passwordMatched) {
-      loginGuard.recordFailure(ip, username);
-      return c.json({ error: 'AUTH_FAILED', message: '用户名或密码错误' }, 401);
-    }
-
-    loginGuard.recordSuccess(ip, username);
-
-    const session = sessionService.createSession(
-      c,
-      username,
-      ip,
-      c.req.header('user-agent') ?? null,
-    );
-
-    return c.json({
-      success: true,
-      authenticated: true,
-      username,
-      mustChangePassword: admin?.mustChangePassword ?? false,
-      expiresAt: session.expiresAt,
-    });
-  });
-
-  // Web Auth - 首次登录后修改管理员账号密码
-  app.post('/api/web-auth/change-credentials', requireSession, requireCsrfToken(), async (c) => {
-    const storage = options.storage;
-    const sessionService = options.sessionService;
-    if (!storage || !sessionService) {
-      return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'Web Auth 未初始化' }, 503);
-    }
-
-    const session = c.get('webSession');
-    const currentAdmin = storage.getAdminByUsername(session.username);
-    if (!currentAdmin) {
-      sessionService.destroySession(c);
-      return c.json({ error: 'UNAUTHORIZED', message: '管理员会话已失效，请重新登录' }, 401);
-    }
-
-    const body = await parseJson<{ username?: string; password?: string }>(c);
-    const newUsername = body?.username?.trim() ?? '';
-    const newPassword = body?.password?.trim() ?? '';
-    if (!newUsername || !newPassword) {
-      return c.json({ error: 'INVALID_INPUT', message: '新用户名和新密码不能为空' }, 400);
-    }
-
-    if (newUsername.length < 3 || newUsername.length > 64) {
-      return c.json({ error: 'INVALID_INPUT', message: '用户名长度必须在 3-64 之间' }, 400);
-    }
-    if (newPassword.length < 8) {
-      return c.json({ error: 'INVALID_INPUT', message: '密码长度至少 8 位' }, 400);
-    }
-
-    if (currentAdmin.mustChangePassword) {
-      if (newUsername === currentAdmin.username) {
-        return c.json({ error: 'INVALID_INPUT', message: '首次修改时必须更换用户名' }, 400);
-      }
-      if (safeVerifyPassword(newPassword, currentAdmin.passwordHash)) {
-        return c.json({ error: 'INVALID_INPUT', message: '首次修改时必须更换密码' }, 400);
-      }
-    }
-
-    storage.updateAdminCredentials(newUsername, hashPassword(newPassword), false);
-    sessionService.destroySession(c);
-
-    const ip = getClientIp(c);
-    const newSession = sessionService.createSession(
-      c,
-      newUsername,
-      ip,
-      c.req.header('user-agent') ?? null,
-    );
-
-    return c.json({
-      success: true,
-      authenticated: true,
-      username: newUsername,
-      mustChangePassword: false,
-      expiresAt: newSession.expiresAt,
-    });
-  });
-
-  // Web Auth - 退出
-  app.post('/api/web-auth/logout', requireSession, requireCsrfToken(), (c) => {
-    options.sessionService?.destroySession(c);
-    return c.json({ success: true });
-  });
-
-  // Web Auth - 当前会话
-  app.get('/api/web-auth/me', requireSession, (c) => {
-    const session = c.get('webSession');
-    const admin = options.storage?.getAdminByUsername(session.username);
-    return c.json({
-      authenticated: true,
-      username: session.username,
-      mustChangePassword: admin?.mustChangePassword ?? false,
-      expiresAt: session.expiresAt,
-    });
-  });
-
-  // Web Auth - 获取 CSRF token
-  app.get('/api/web-auth/csrf', requireSession, (c) => {
-    const session = c.get('webSession');
-    options.sessionService?.writeCsrfCookie(c, session.csrfToken);
-
-    return c.json({ csrfToken: session.csrfToken });
-  });
-
   // Daemon 管理 - 在线+配置聚合
-  app.get('/api/daemons', requireSession, requireCredentialsUpdated, (c) => {
+  app.get('/api/daemons', requireManagementAccess, (c) => {
     const storage = options.storage;
     if (!storage) {
       return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
@@ -233,201 +83,127 @@ export function createServer(options: ServerOptions = {}) {
     return c.json({ onlineDaemons, profiles });
   });
 
-  // Daemon Profile - 新增
-  app.post(
-    '/api/daemon-profiles',
-    requireSession,
-    requireCredentialsUpdated,
-    requireCsrfToken(),
-    async (c) => {
-      return c.json({ error: 'API_DISABLED', message: 'profile 为 daemonId 自动创建，不支持手动新增' }, 405);
-    },
-  );
+  // Daemon Profile - 新增（禁用）
+  app.post('/api/daemon-profiles', requireManagementAccess, async (c) => {
+    return c.json({ error: 'API_DISABLED', message: 'profile 为 daemonId 自动创建，不支持手动新增' }, 405);
+  });
 
   // Daemon Profile - 更新
-  app.patch(
-    '/api/daemon-profiles/:id',
-    requireSession,
-    requireCredentialsUpdated,
-    requireCsrfToken(),
-    async (c) => {
-      const storage = options.storage;
-      if (!storage) {
-        return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
-      }
-
-      const profileId = c.req.param('id');
-      const body = await parseJson<Record<string, unknown>>(c);
-
-      if (body && Object.prototype.hasOwnProperty.call(body, 'daemonId')) {
-        return c.json({ error: 'IMMUTABLE_FIELD', message: 'daemonId 创建后不可修改' }, 400);
-      }
-
-      const profile = storage.getDaemonProfile(profileId);
-      if (!profile) {
-        return c.json({ error: 'NOT_FOUND', message: 'daemon profile 不存在' }, 404);
-      }
-
-      const onlineDaemonIds = new Set((options.deviceRegistry?.getOnlineDaemons() ?? []).map((item) => item.daemonId));
-      if (!profile.daemonId || !onlineDaemonIds.has(profile.daemonId)) {
-        return c.json({ error: 'PROFILE_OFFLINE', message: '离线 daemon 的配置仅支持手动删除' }, 409);
-      }
-
-      const patch = parsePatchProfileInput(body);
-
-      if (!patch) {
-        return c.json({ error: 'INVALID_INPUT', message: 'daemon profile 更新参数无效' }, 400);
-      }
-
-      try {
-        const profile = storage.updateDaemonProfile(profileId, patch);
-        return c.json({ profile });
-      } catch (error) {
-        return c.json({ error: 'NOT_FOUND', message: toErrorMessage(error) }, 404);
-      }
-    },
-  );
-
-  // Daemon Profile - 删除（仅离线配置允许手动删除）
-  app.delete(
-    '/api/daemon-profiles/:id',
-    requireSession,
-    requireCredentialsUpdated,
-    requireCsrfToken(),
-    async (c) => {
-      const storage = options.storage;
-      if (!storage) {
-        return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
-      }
-
-      const profileId = c.req.param('id');
-      const profile = storage.getDaemonProfile(profileId);
-      if (!profile) {
-        return c.json({ error: 'NOT_FOUND', message: 'daemon profile 不存在' }, 404);
-      }
-
-      const onlineDaemonIds = new Set((options.deviceRegistry?.getOnlineDaemons() ?? []).map((item) => item.daemonId));
-      if (profile.daemonId && onlineDaemonIds.has(profile.daemonId)) {
-        return c.json({ error: 'PROFILE_ONLINE', message: '在线 daemon 的配置不允许删除' }, 409);
-      }
-
-      try {
-        storage.deleteDaemonProfile(profileId);
-        return c.json({ success: true });
-      } catch (error) {
-        return c.json({ error: 'NOT_FOUND', message: toErrorMessage(error) }, 404);
-      }
-    },
-  );
-
-  // Daemon Profile - 绑定在线 daemonId
-  app.post(
-    '/api/daemon-profiles/:id/bind',
-    requireSession,
-    requireCredentialsUpdated,
-    requireCsrfToken(),
-    async (c) => {
-      return c.json({ error: 'API_DISABLED', message: 'daemonId 与 profile 一一对应，不支持手动绑定' }, 405);
-    },
-  );
-
-  // ws-ticket（client 连接 /ws 前置）
-  app.post(
-    '/api/ws-ticket',
-    requireSession,
-    requireCredentialsUpdated,
-    requireCsrfToken(),
-    async (c) => {
-      const storage = options.storage;
-      const wsTicketService = options.wsTicketService;
-
-      if (!storage || !wsTicketService) {
-        return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'ws-ticket 服务未初始化' }, 503);
-      }
-
-      const body = await parseJson<{ profileId?: string; webLinkToken?: string }>(c);
-      const profileId = body?.profileId?.trim();
-      const webLinkToken = body?.webLinkToken?.trim() ?? '';
-
-      if (!profileId) {
-        return c.json({ error: 'INVALID_INPUT', message: 'profileId 不能为空' }, 400);
-      }
-      if (options.webLinkToken && webLinkToken !== options.webLinkToken) {
-        return c.json({ error: 'UNAUTHORIZED', message: 'MYTERMUX_WEB_LINK_TOKEN 无效' }, 401);
-      }
-
-      const profile = storage.getDaemonProfile(profileId);
-      if (!profile) {
-        return c.json({ error: 'NOT_FOUND', message: 'daemon profile 不存在' }, 404);
-      }
-
-      const daemonToken = storage.getDaemonProfileToken(profileId);
-      if (!daemonToken) {
-        return c.json({ error: 'TOKEN_MISSING', message: '该 profile 未配置 MYTERMUX_DAEMON_TOKEN' }, 400);
-      }
-
-      const ticket = wsTicketService.issue({
-        profileId,
-        daemonToken,
-        ...(profile.daemonId !== undefined && { daemonId: profile.daemonId }),
-      });
-
-      return c.json({
-        ticket: ticket.ticket,
-        expiresAt: ticket.expiresAt,
-        profileId,
-        daemonId: profile.daemonId ?? null,
-      });
-    },
-  );
-
-  // Web Preferences - 查询
-  app.get('/api/web-preferences', requireSession, requireCredentialsUpdated, (c) => {
+  app.patch('/api/daemon-profiles/:id', requireManagementAccess, async (c) => {
     const storage = options.storage;
     if (!storage) {
       return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
     }
 
-    return c.json(storage.getWebPreferences());
+    const profileId = c.req.param('id');
+    const body = await parseJson<Record<string, unknown>>(c);
+
+    if (body && Object.prototype.hasOwnProperty.call(body, 'daemonId')) {
+      return c.json({ error: 'IMMUTABLE_FIELD', message: 'daemonId 创建后不可修改' }, 400);
+    }
+
+    const profile = storage.getDaemonProfile(profileId);
+    if (!profile) {
+      return c.json({ error: 'NOT_FOUND', message: 'daemon profile 不存在' }, 404);
+    }
+
+    const onlineDaemonIds = new Set((options.deviceRegistry?.getOnlineDaemons() ?? []).map((item) => item.daemonId));
+    if (!profile.daemonId || !onlineDaemonIds.has(profile.daemonId)) {
+      return c.json({ error: 'PROFILE_OFFLINE', message: '离线 daemon 的配置仅支持手动删除' }, 409);
+    }
+
+    const patch = parsePatchProfileInput(body);
+    if (!patch) {
+      return c.json({ error: 'INVALID_INPUT', message: 'daemon profile 更新参数无效' }, 400);
+    }
+
+    try {
+      const updated = storage.updateDaemonProfile(profileId, patch);
+      return c.json({ profile: updated });
+    } catch (error) {
+      return c.json({ error: 'NOT_FOUND', message: toErrorMessage(error) }, 404);
+    }
   });
 
-  // Web Preferences - 更新
-  app.put(
-    '/api/web-preferences',
-    requireSession,
-    requireCredentialsUpdated,
-    requireCsrfToken(),
-    async (c) => {
-      const storage = options.storage;
-      if (!storage) {
-        return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
-      }
+  // Daemon Profile - 删除（仅离线配置允许手动删除）
+  app.delete('/api/daemon-profiles/:id', requireManagementAccess, async (c) => {
+    const storage = options.storage;
+    if (!storage) {
+      return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
+    }
 
-      const body = await parseJson<{
-        shortcuts?: unknown;
-        commonChars?: unknown;
-        relayUrl?: unknown;
-        webLinkToken?: unknown;
-      }>(c);
-      const parsed = parseWebPreferencesInput(
-        body?.shortcuts,
-        body?.commonChars,
-        body?.relayUrl,
-        body?.webLinkToken,
-      );
-      if (!parsed) {
-        return c.json({ error: 'INVALID_INPUT', message: 'Web 偏好配置无效' }, 400);
-      }
+    const profileId = c.req.param('id');
+    const profile = storage.getDaemonProfile(profileId);
+    if (!profile) {
+      return c.json({ error: 'NOT_FOUND', message: 'daemon profile 不存在' }, 404);
+    }
 
-      const preferences = storage.upsertWebPreferences(
-        parsed.shortcuts,
-        parsed.commonChars,
-        parsed.relayUrl,
-        parsed.webLinkToken,
-      );
-      return c.json(preferences);
-    },
-  );
+    const onlineDaemonIds = new Set((options.deviceRegistry?.getOnlineDaemons() ?? []).map((item) => item.daemonId));
+    if (profile.daemonId && onlineDaemonIds.has(profile.daemonId)) {
+      return c.json({ error: 'PROFILE_ONLINE', message: '在线 daemon 的配置不允许删除' }, 409);
+    }
+
+    try {
+      storage.deleteDaemonProfile(profileId);
+      return c.json({ success: true });
+    } catch (error) {
+      return c.json({ error: 'NOT_FOUND', message: toErrorMessage(error) }, 404);
+    }
+  });
+
+  // Daemon Profile - 绑定在线 daemonId（禁用）
+  app.post('/api/daemon-profiles/:id/bind', requireManagementAccess, async (c) => {
+    return c.json({ error: 'API_DISABLED', message: 'daemonId 与 profile 一一对应，不支持手动绑定' }, 405);
+  });
+
+  // ws-ticket（client 连接 /ws 前置）
+  app.post('/api/ws-ticket', requireManagementAccess, async (c) => {
+    const storage = options.storage;
+    const wsTicketService = options.wsTicketService;
+
+    if (!storage || !wsTicketService) {
+      return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'ws-ticket 服务未初始化' }, 503);
+    }
+
+    const body = await parseJson<{ profileId?: string; webLinkToken?: string }>(c);
+    const profileId = body?.profileId?.trim();
+    const webLinkTokenFromBody = body?.webLinkToken?.trim() ?? '';
+    const webLinkTokenFromHeader = c.req.header('x-mytermux-web-link-token')?.trim() ?? '';
+
+    if (!profileId) {
+      return c.json({ error: 'INVALID_INPUT', message: 'profileId 不能为空' }, 400);
+    }
+
+    if (options.webLinkToken) {
+      const suppliedToken = webLinkTokenFromHeader || webLinkTokenFromBody;
+      if (suppliedToken !== options.webLinkToken) {
+        return c.json({ error: 'UNAUTHORIZED', message: 'MYTERMUX_WEB_LINK_TOKEN 无效' }, 401);
+      }
+    }
+
+    const profile = storage.getDaemonProfile(profileId);
+    if (!profile) {
+      return c.json({ error: 'NOT_FOUND', message: 'daemon profile 不存在' }, 404);
+    }
+
+    const daemonToken = storage.getDaemonProfileToken(profileId);
+    if (!daemonToken) {
+      return c.json({ error: 'TOKEN_MISSING', message: '该 profile 未配置 MYTERMUX_DAEMON_TOKEN' }, 400);
+    }
+
+    const ticket = wsTicketService.issue({
+      profileId,
+      daemonToken,
+      ...(profile.daemonId !== undefined && { daemonId: profile.daemonId }),
+    });
+
+    return c.json({
+      ticket: ticket.ticket,
+      expiresAt: ticket.expiresAt,
+      profileId,
+      daemonId: profile.daemonId ?? null,
+    });
+  });
 
   // API 文档/信息
   app.get('/', (c) => {
@@ -437,17 +213,11 @@ export function createServer(options: ServerOptions = {}) {
       endpoints: {
         '/health': 'GET - 健康检查',
         '/ws': 'WebSocket - 设备连接端点',
-        '/api/web-auth/login': 'POST - Web 登录',
-        '/api/web-auth/change-credentials': 'POST - 修改管理员账号密码（首次登录必改）',
-        '/api/web-auth/logout': 'POST - Web 退出',
-        '/api/web-auth/me': 'GET - 当前登录用户',
-        '/api/web-auth/csrf': 'GET - 获取 CSRF Token',
         '/api/ws-ticket': 'POST - 签发一次性 ws ticket',
         '/api/daemons': 'GET - 在线 daemon 与 profile 聚合视图',
         '/api/daemon-profiles': 'POST - 已禁用（profile 自动创建）',
         '/api/daemon-profiles/:id': 'PATCH/DELETE - 更新或删除（仅离线可删除）',
         '/api/daemon-profiles/:id/bind': 'POST - 已禁用（不支持手动绑定）',
-        '/api/web-preferences': 'GET/PUT - 终端快捷键与常用字符配置',
       },
     });
   });
@@ -455,48 +225,20 @@ export function createServer(options: ServerOptions = {}) {
   return app;
 }
 
-function createRequireSessionMiddleware(
-  sessionService: WebSessionService | undefined,
-): MiddlewareHandler<{ Variables: AuthVariables }> {
-  if (!sessionService) {
-    return async (c) => {
-      return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'Web Auth 未初始化' }, 503);
-    };
-  }
-
-  return requireWebSession(sessionService);
-}
-
-function createRequireCredentialsUpdatedMiddleware(
-  storage: RelayStorage | undefined,
-): MiddlewareHandler<{ Variables: AuthVariables }> {
-  if (!storage) {
-    return async (c) => {
-      return c.json({ error: 'SERVICE_UNAVAILABLE', message: '存储未初始化' }, 503);
+function createRequireManagementAccessMiddleware(webLinkToken: string | undefined): MiddlewareHandler {
+  if (!webLinkToken) {
+    return async (_c, next) => {
+      await next();
     };
   }
 
   return async (c, next) => {
-    const session = c.get('webSession');
-    const admin = storage.getAdminByUsername(session.username);
-    if (admin?.mustChangePassword) {
-      return c.json(
-        { error: 'CREDENTIALS_UPDATE_REQUIRED', message: '首次登录后必须先修改账号和密码' },
-        428,
-      );
+    const token = c.req.header('x-mytermux-web-link-token')?.trim();
+    if (!token || token !== webLinkToken) {
+      return c.json({ error: 'UNAUTHORIZED', message: 'MYTERMUX_WEB_LINK_TOKEN 无效' }, 401);
     }
-
     await next();
   };
-}
-
-/** 安全包装密码校验，避免 hash 解析异常中断请求 */
-function safeVerifyPassword(password: string, hashString: string): boolean {
-  try {
-    return verifyPassword(password, hashString);
-  } catch {
-    return false;
-  }
 }
 
 /** 解析 JSON 请求体 */
@@ -559,57 +301,6 @@ function parsePatchProfileInput(body: Record<string, unknown> | null): DaemonPro
   return patch;
 }
 
-/** Web 偏好输入校验 */
-function parseWebPreferencesInput(
-  shortcutsInput: unknown,
-  commonCharsInput: unknown,
-  relayUrlInput: unknown,
-  webLinkTokenInput: unknown,
-): {
-  shortcuts: WebShortcut[];
-  commonChars: string[];
-  relayUrl: string | null;
-  webLinkToken: string | null;
-} | null {
-  if (!Array.isArray(shortcutsInput) || !Array.isArray(commonCharsInput)) {
-    return null;
-  }
-
-  const shortcuts: WebShortcut[] = [];
-  for (const item of shortcutsInput) {
-    if (
-      typeof item !== 'object' ||
-      item === null ||
-      typeof (item as Record<string, unknown>)['id'] !== 'string' ||
-      typeof (item as Record<string, unknown>)['label'] !== 'string' ||
-      typeof (item as Record<string, unknown>)['value'] !== 'string'
-    ) {
-      return null;
-    }
-
-    const record = item as Record<string, unknown>;
-    const id = String(record['id']).trim();
-    const label = String(record['label']).trim();
-    const value = String(record['value']);
-
-    if (!id || !label) {
-      return null;
-    }
-
-    shortcuts.push({ id, label, value });
-  }
-
-  const commonChars = commonCharsInput
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
-
-  const relayUrl = normalizeOptionalString(relayUrlInput);
-  const webLinkToken = normalizeOptionalString(webLinkTokenInput);
-
-  return { shortcuts, commonChars, relayUrl, webLinkToken };
-}
-
 /** 规范化可空字符串 */
 function normalizeNullableString(value: unknown): string | null {
   if (typeof value !== 'string') {
@@ -618,15 +309,6 @@ function normalizeNullableString(value: unknown): string | null {
 
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
-}
-
-function normalizeOptionalString(value: unknown): string | null {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }
 
 /** 规范化命令模式 */

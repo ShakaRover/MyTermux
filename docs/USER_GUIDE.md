@@ -4,9 +4,9 @@
 
 MyTermux 当前推荐流程：
 
-1. 启动 relay（Web 登录入口 + 中继）
+1. 启动 relay（中继与 profile API）
 2. 启动 daemon（提供 `MYTERMUX_DAEMON_TOKEN`）
-3. 浏览器登录 Web 管理中心
+3. 浏览器登录 Web 管理中心（本地登录，不依赖 Relay）
 4. 在 Web 中编辑 daemon profile 配置
 5. 连接 daemon 并进入终端会话
 
@@ -47,9 +47,13 @@ pnpm start:local:test
 
 说明：本地运行不需要证书，不要配置 `TLS_CERT` / `TLS_KEY`。
 
-> Web 管理端默认账号密码为 `admin` / `mytermux`，首次登录后必须修改账号和密码。
+### 3.3 Web 首次登录
 
-### 3.3 分别启动（可选）
+- 默认账号密码：`admin` / `mytermux`
+- 首次登录后必须修改账号和密码
+- 登录信息保存在浏览器本地数据库（IndexedDB：`mytermux_web_db`）
+
+### 3.4 分别启动（可选）
 
 ```bash
 bash ./scripts/relay/start-fg.sh
@@ -69,11 +73,6 @@ pnpm --filter @mytermux/daemon token
 
 浏览器打开 `http://127.0.0.1:62100`，进入 `/login` 登录。
 
-登录成功后可在 `/daemons` 的“Relay 连接配置”中设置：
-
-- Relay WebSocket 地址
-- `MYTERMUX_WEB_LINK_TOKEN`
-
 ## 4. Daemon 管理中心
 
 登录后进入 `/daemons`：
@@ -81,7 +80,8 @@ pnpm --filter @mytermux/daemon token
 1. 在线 daemon 会自动生成默认 profile（`daemonId` 与 profile 一一对应）
 2. 在线 profile 支持编辑（名称、token、默认目录、默认命令）
 3. daemon 离线后 profile 会保留，可手动删除离线 profile
-4. 点击“连接”进入 `/sessions`
+4. 可在 Web 保存 Relay WebSocket 地址与 `MYTERMUX_WEB_LINK_TOKEN`
+5. 点击“连接”进入 `/sessions`
 
 默认命令支持：
 
@@ -118,34 +118,37 @@ pnpm --filter @mytermux/relay status
 
 `~/.mytermux`
 
-- `auth.json`：daemon 认证信息
+- `daemon.db`：daemon 认证与 token 数据
 - `daemon.pid` / `daemon.status`
+- `relay.db`：daemon profile 数据
 - `relay.pid` / `relay.log`
-- `relay.db`：Web 登录、锁定计数、profile、偏好配置
+
+Web 本地数据：
+
+- 浏览器 IndexedDB：`mytermux_web_db`
 
 ## 8. 故障排查
 
 ### 8.1 Relay 状态正常但 Web 登录失败
 
-- 优先确认是否使用默认账号密码 `admin` / `mytermux`
-- 若是首次登录，必须先完成账号与密码修改
-- 查看 `relay.log`
+- Web 登录不依赖 Relay，先检查浏览器本地数据库是否被清理
+- 确认默认账号 `admin` / `mytermux`（首次登录后需改密）
 
 ### 8.2 Daemon 在线但无法连接
 
 - 确认 profile 已配置有效 `MYTERMUX_DAEMON_TOKEN`
 - 在 `/daemons` 中确认 profile 对应 daemonId 与在线 daemon 一致
-- 若启用链路鉴权，确认 `MYTERMUX_DAEMON_LINK_TOKEN` 一致
+- 若启用链路鉴权，确认 `MYTERMUX_WEB_LINK_TOKEN` 与 `MYTERMUX_DAEMON_LINK_TOKEN` 均一致
 
 ### 8.3 终端无输出或频繁断开
 
 - 检查 relay 与 daemon 网络
-- 查看 `GET /health` 和 daemon 日志
+- 查看 `GET /health` 与 daemon 日志
 - 重连 profile（单活连接会自动清理旧连接）
 
 ## 9. 历史目录说明
 
-MyTermux 不会自动迁移或删除历史版本目录，请手动处理旧数据。
+MyTermux 不会自动迁移或删除历史版本目录（daemon 启动时会尝试将 `auth.json` 迁移到 `daemon.db`）。
 
 ## 10. 生产部署说明
 

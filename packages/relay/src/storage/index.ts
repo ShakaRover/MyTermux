@@ -1,29 +1,8 @@
 import { mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { DaemonProfile, DefaultCommandMode, WebPreferences, WebShortcut } from '@mytermux/shared';
+import type { DaemonProfile, DefaultCommandMode } from '@mytermux/shared';
 import { decryptToken, deriveAesKey, encryptToken, maskAccessToken } from './crypto.js';
-
-/** 登录尝试记录（按 ip+username 维度） */
-export interface LoginAttemptRecord {
-  ip: string;
-  username: string;
-  failedCount: number;
-  windowStart: number;
-  lockUntil?: number | null;
-  lastFailedAt: number;
-}
-
-/** Web 会话记录 */
-export interface WebSessionRecord {
-  sessionId: string;
-  username: string;
-  csrfToken: string;
-  ip?: string | null;
-  userAgent?: string | null;
-  expiresAt: number;
-  createdAt: number;
-}
 
 /** daemon 配置写入参数 */
 export interface DaemonProfileInput {
@@ -45,24 +24,6 @@ export interface DaemonProfilePatch {
   defaultCommandValue?: string | null;
 }
 
-/** Web 管理模块默认快捷键 */
-export const DEFAULT_WEB_SHORTCUTS: WebShortcut[] = [
-  { id: 'ctrl-c', label: 'Ctrl+C', value: '\u0003' },
-  { id: 'ctrl-v', label: 'Ctrl+V', value: '\u0016' },
-  { id: 'ctrl-d', label: 'Ctrl+D', value: '\u0004' },
-  { id: 'ctrl-z', label: 'Ctrl+Z', value: '\u001A' },
-  { id: 'ctrl-l', label: 'Ctrl+L', value: '\u000C' },
-  { id: 'esc', label: 'Esc', value: '\u001B' },
-  { id: 'tab', label: 'Tab', value: '\t' },
-  { id: 'arrow-up', label: '↑', value: '\u001B[A' },
-  { id: 'arrow-down', label: '↓', value: '\u001B[B' },
-  { id: 'arrow-left', label: '←', value: '\u001B[D' },
-  { id: 'arrow-right', label: '→', value: '\u001B[C' },
-];
-
-/** Web 管理模块默认常用字符 */
-export const DEFAULT_COMMON_CHARS = ['/', '~', '|', '&', ';', '$', '*', '{}', '[]', '()'];
-
 /** 中继存储层（SQLite） */
 export class RelayStorage {
   private readonly db: DatabaseSync;
@@ -78,44 +39,8 @@ export class RelayStorage {
     this.initializeSchema();
   }
 
-  // --------------------------------------------------------------------------
-  // Schema
-  // --------------------------------------------------------------------------
-
   private initializeSchema(): void {
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS web_admin (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        username TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
-        must_change_password INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS web_sessions (
-        session_id TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        csrf_token TEXT NOT NULL,
-        ip TEXT,
-        user_agent TEXT,
-        expires_at INTEGER NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_web_sessions_expires_at
-        ON web_sessions(expires_at);
-
-      CREATE TABLE IF NOT EXISTS login_attempts (
-        ip TEXT NOT NULL,
-        username TEXT NOT NULL,
-        failed_count INTEGER NOT NULL,
-        window_start INTEGER NOT NULL,
-        lock_until INTEGER,
-        last_failed_at INTEGER NOT NULL,
-        PRIMARY KEY (ip, username)
-      );
-
       CREATE TABLE IF NOT EXISTS daemon_profiles (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -130,215 +55,8 @@ export class RelayStorage {
 
       CREATE INDEX IF NOT EXISTS idx_daemon_profiles_daemon_id
         ON daemon_profiles(daemon_id);
-
-      CREATE TABLE IF NOT EXISTS web_preferences (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        shortcuts_json TEXT NOT NULL,
-        common_chars_json TEXT NOT NULL,
-        relay_url TEXT,
-        web_link_token TEXT,
-        updated_at INTEGER NOT NULL
-      );
     `);
-
-    // 兼容旧版本：补齐新增列
-    this.ensureColumnExists('web_admin', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
-    this.ensureColumnExists('web_preferences', 'relay_url', 'TEXT');
-    this.ensureColumnExists('web_preferences', 'web_link_token', 'TEXT');
-
-    // 初始化默认配置
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO web_preferences (id, shortcuts_json, common_chars_json, relay_url, web_link_token, updated_at)
-      VALUES (1, ?, ?, NULL, NULL, ?)
-      ON CONFLICT(id) DO NOTHING
-    `).run(
-      JSON.stringify(DEFAULT_WEB_SHORTCUTS),
-      JSON.stringify(DEFAULT_COMMON_CHARS),
-      now,
-    );
   }
-
-  // --------------------------------------------------------------------------
-  // Admin
-  // --------------------------------------------------------------------------
-
-  upsertAdmin(username: string, passwordHash: string, mustChangePassword = false): void {
-    const now = Date.now();
-    this.db.prepare(`
-      INSERT INTO web_admin (id, username, password_hash, must_change_password, created_at, updated_at)
-      VALUES (1, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        username = excluded.username,
-        password_hash = excluded.password_hash,
-        must_change_password = excluded.must_change_password,
-        updated_at = excluded.updated_at
-    `).run(username, passwordHash, mustChangePassword ? 1 : 0, now, now);
-  }
-
-  getAdmin(): { username: string; passwordHash: string; mustChangePassword: boolean } | null {
-    const row = this.db.prepare(`
-      SELECT username, password_hash, must_change_password
-      FROM web_admin
-      WHERE id = 1
-      LIMIT 1
-    `).get() as {
-      username: string;
-      password_hash: string;
-      must_change_password: number;
-    } | undefined;
-
-    if (!row) return null;
-    return {
-      username: row.username,
-      passwordHash: row.password_hash,
-      mustChangePassword: row.must_change_password === 1,
-    };
-  }
-
-  getAdminByUsername(username: string): { username: string; passwordHash: string; mustChangePassword: boolean } | null {
-    const row = this.db.prepare(`
-      SELECT username, password_hash, must_change_password
-      FROM web_admin
-      WHERE username = ?
-      LIMIT 1
-    `).get(username) as {
-      username: string;
-      password_hash: string;
-      must_change_password: number;
-    } | undefined;
-
-    if (!row) return null;
-    return {
-      username: row.username,
-      passwordHash: row.password_hash,
-      mustChangePassword: row.must_change_password === 1,
-    };
-  }
-
-  updateAdminCredentials(username: string, passwordHash: string, mustChangePassword = false): void {
-    const now = Date.now();
-    this.db.prepare(`
-      UPDATE web_admin
-      SET username = ?, password_hash = ?, must_change_password = ?, updated_at = ?
-      WHERE id = 1
-    `).run(username, passwordHash, mustChangePassword ? 1 : 0, now);
-  }
-
-  // --------------------------------------------------------------------------
-  // Session
-  // --------------------------------------------------------------------------
-
-  createSession(record: Omit<WebSessionRecord, 'createdAt'>): WebSessionRecord {
-    const createdAt = Date.now();
-    this.db.prepare(`
-      INSERT INTO web_sessions (session_id, username, csrf_token, ip, user_agent, expires_at, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      record.sessionId,
-      record.username,
-      record.csrfToken,
-      record.ip ?? null,
-      record.userAgent ?? null,
-      record.expiresAt,
-      createdAt,
-    );
-
-    return { ...record, createdAt };
-  }
-
-  getSession(sessionId: string): WebSessionRecord | null {
-    const row = this.db.prepare(`
-      SELECT session_id, username, csrf_token, ip, user_agent, expires_at, created_at
-      FROM web_sessions
-      WHERE session_id = ?
-      LIMIT 1
-    `).get(sessionId) as {
-      session_id: string;
-      username: string;
-      csrf_token: string;
-      ip: string | null;
-      user_agent: string | null;
-      expires_at: number;
-      created_at: number;
-    } | undefined;
-
-    if (!row) return null;
-    return {
-      sessionId: row.session_id,
-      username: row.username,
-      csrfToken: row.csrf_token,
-      ip: row.ip,
-      userAgent: row.user_agent,
-      expiresAt: row.expires_at,
-      createdAt: row.created_at,
-    };
-  }
-
-  deleteSession(sessionId: string): void {
-    this.db.prepare('DELETE FROM web_sessions WHERE session_id = ?').run(sessionId);
-  }
-
-  deleteExpiredSessions(now = Date.now()): void {
-    this.db.prepare('DELETE FROM web_sessions WHERE expires_at <= ?').run(now);
-  }
-
-  // --------------------------------------------------------------------------
-  // Login attempts
-  // --------------------------------------------------------------------------
-
-  getLoginAttempt(ip: string, username: string): LoginAttemptRecord | null {
-    const row = this.db.prepare(`
-      SELECT ip, username, failed_count, window_start, lock_until, last_failed_at
-      FROM login_attempts
-      WHERE ip = ? AND username = ?
-      LIMIT 1
-    `).get(ip, username) as {
-      ip: string;
-      username: string;
-      failed_count: number;
-      window_start: number;
-      lock_until: number | null;
-      last_failed_at: number;
-    } | undefined;
-
-    if (!row) return null;
-    return {
-      ip: row.ip,
-      username: row.username,
-      failedCount: row.failed_count,
-      windowStart: row.window_start,
-      lockUntil: row.lock_until,
-      lastFailedAt: row.last_failed_at,
-    };
-  }
-
-  upsertLoginAttempt(record: LoginAttemptRecord): void {
-    this.db.prepare(`
-      INSERT INTO login_attempts (ip, username, failed_count, window_start, lock_until, last_failed_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(ip, username) DO UPDATE SET
-        failed_count = excluded.failed_count,
-        window_start = excluded.window_start,
-        lock_until = excluded.lock_until,
-        last_failed_at = excluded.last_failed_at
-    `).run(
-      record.ip,
-      record.username,
-      record.failedCount,
-      record.windowStart,
-      record.lockUntil ?? null,
-      record.lastFailedAt,
-    );
-  }
-
-  deleteLoginAttempt(ip: string, username: string): void {
-    this.db.prepare('DELETE FROM login_attempts WHERE ip = ? AND username = ?').run(ip, username);
-  }
-
-  // --------------------------------------------------------------------------
-  // Daemon profiles
-  // --------------------------------------------------------------------------
 
   listDaemonProfiles(): DaemonProfile[] {
     const rows = this.db.prepare(`
@@ -525,78 +243,6 @@ export class RelayStorage {
     return decryptToken(row.access_token_encrypted, this.aesKey);
   }
 
-  // --------------------------------------------------------------------------
-  // Preferences
-  // --------------------------------------------------------------------------
-
-  getWebPreferences(): WebPreferences {
-    const row = this.db.prepare(`
-      SELECT shortcuts_json, common_chars_json, relay_url, web_link_token, updated_at
-      FROM web_preferences
-      WHERE id = 1
-      LIMIT 1
-    `).get() as {
-      shortcuts_json: string;
-      common_chars_json: string;
-      relay_url: string | null;
-      web_link_token: string | null;
-      updated_at: number;
-    } | undefined;
-
-    if (!row) {
-      return {
-        shortcuts: DEFAULT_WEB_SHORTCUTS,
-        commonChars: DEFAULT_COMMON_CHARS,
-        relayUrl: null,
-        webLinkToken: null,
-        updatedAt: Date.now(),
-      };
-    }
-
-    try {
-      return {
-        shortcuts: JSON.parse(row.shortcuts_json) as WebShortcut[],
-        commonChars: JSON.parse(row.common_chars_json) as string[],
-        relayUrl: row.relay_url,
-        webLinkToken: row.web_link_token,
-        updatedAt: row.updated_at,
-      };
-    } catch {
-      return {
-        shortcuts: DEFAULT_WEB_SHORTCUTS,
-        commonChars: DEFAULT_COMMON_CHARS,
-        relayUrl: row.relay_url,
-        webLinkToken: row.web_link_token,
-        updatedAt: row.updated_at,
-      };
-    }
-  }
-
-  upsertWebPreferences(
-    shortcuts: WebShortcut[],
-    commonChars: string[],
-    relayUrl: string | null,
-    webLinkToken: string | null,
-  ): WebPreferences {
-    const updatedAt = Date.now();
-    this.db.prepare(`
-      INSERT INTO web_preferences (id, shortcuts_json, common_chars_json, relay_url, web_link_token, updated_at)
-      VALUES (1, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        shortcuts_json = excluded.shortcuts_json,
-        common_chars_json = excluded.common_chars_json,
-        relay_url = excluded.relay_url,
-        web_link_token = excluded.web_link_token,
-        updated_at = excluded.updated_at
-    `).run(JSON.stringify(shortcuts), JSON.stringify(commonChars), relayUrl, webLinkToken, updatedAt);
-
-    return { shortcuts, commonChars, relayUrl, webLinkToken, updatedAt };
-  }
-
-  // --------------------------------------------------------------------------
-  // Private utils
-  // --------------------------------------------------------------------------
-
   private mapDaemonProfile(row: {
     id: string;
     name: string;
@@ -630,13 +276,5 @@ export class RelayStorage {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
-  }
-
-  private ensureColumnExists(tableName: string, columnName: string, columnDef: string): void {
-    const rows = this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
-    const exists = rows.some((row) => row.name === columnName);
-    if (!exists) {
-      this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
-    }
   }
 }

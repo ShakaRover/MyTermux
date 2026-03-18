@@ -20,8 +20,9 @@ pnpm --filter @mytermux/web test
 当前覆盖重点：
 
 - `shared`: 协议/加密
-- `relay`: registry、websocket-handler、密码哈希、暴力破解、ws-ticket
+- `relay`: registry、websocket-handler、ws-ticket、profile API
 - `daemon`: `TerminalSession` 的 `pid/startupCommand`
+- `web`: 登录状态、会话状态、连接 URL
 
 ## 2. 手工冒烟
 
@@ -31,16 +32,7 @@ pnpm --filter @mytermux/web test
 
 ```bash
 cp .env.example .env
-# 编辑 .env 后执行
 pnpm start:local:test
-```
-
-如需分别启动：
-
-```bash
-bash ./scripts/relay/start-fg.sh
-bash ./scripts/daemon/start-fg.sh
-bash ./scripts/web/start-fg.sh
 ```
 
 ### 2.2 Web 登录与管理
@@ -50,11 +42,17 @@ bash ./scripts/web/start-fg.sh
 3. 首次登录必须进入账号初始化页并修改账号和密码
 4. 完成账号初始化后，在 `/daemons` 验证在线 daemon 自动生成 profile
 5. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）
-6. 让 daemon 离线，验证 profile 保留且支持手动删除
-7. 验证可在 Web 端保存 Relay 地址与 `MYTERMUX_WEB_LINK_TOKEN` 配置
-8. 点击“连接”进入 `/sessions`
+6. 验证可在 Web 端保存 Relay 地址与 `MYTERMUX_WEB_LINK_TOKEN` 配置
+7. 点击“连接”进入 `/sessions`
 
-### 2.3 终端会话
+### 2.3 Relay 鉴权验证（开启 `MYTERMUX_WEB_LINK_TOKEN` 时）
+
+1. 不带 `x-mytermux-web-link-token` 请求 `/api/daemons`，应返回 401
+2. 带错误 token 请求 `/api/daemons`，应返回 401
+3. 带正确 token 请求 `/api/daemons`，应返回 200
+4. `POST /api/ws-ticket` 带错误 token 应返回 401，正确 token 返回 200
+
+### 2.4 终端会话
 
 1. 验证进入 `/sessions` 后不会自动新建会话
 2. 手动新建会话并发送输入
@@ -62,7 +60,7 @@ bash ./scripts/web/start-fg.sh
 4. 调整窗口，验证 resize 正常
 5. 关闭会话，验证列表同步
 
-### 2.4 移动端快捷栏
+### 2.5 移动端快捷栏
 
 1. 在触屏设备打开 `/sessions`
 2. 聚焦终端并弹出软键盘
@@ -73,18 +71,16 @@ bash ./scripts/web/start-fg.sh
 ## 3. 协议与命名扫描
 
 ```bash
-rg -n --glob '!node_modules' 'token_auth|token_ack|mytermux-|mytermux_web_session|ws-ticket'
+rg -n --glob '!node_modules' 'token_auth|token_ack|mytermux-|ws-ticket|x-mytermux-web-link-token'
 ```
-
-期望：核心协议、命名与实现一致。
 
 ## 4. 验收清单
 
 - [ ] `build/typecheck/test` 全绿
 - [ ] 测试环境全程使用无证书模型（HTTP + WS）
-- [ ] Web 未登录不可操作 daemon 与会话
-- [ ] 登录后可查看在线 daemon 与 profile 并连接
-- [ ] `MYTERMUX_WEB_LINK_TOKEN` 开启时，缺失或错误 token 会拒绝 ws-ticket
+- [ ] Web 登录完全本地化（不请求 Relay `/api/web-auth/*`）
+- [ ] Web 登录后可查看在线 daemon 与 profile 并连接
+- [ ] `MYTERMUX_WEB_LINK_TOKEN` 开启时，缺失或错误 token 会拒绝管理 API 与 ws-ticket
 - [ ] `MYTERMUX_DAEMON_LINK_TOKEN` 开启时，daemon 链接会被校验
 - [ ] ws-ticket 过期/复用会被拒绝
 - [ ] 会话列表显示 PID

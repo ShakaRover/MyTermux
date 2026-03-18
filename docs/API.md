@@ -7,157 +7,30 @@ MyTermux 协议分为两层：
 1. 传输层（Relay 可见）：设备注册、token 认证、路由
 2. 应用层（E2E 加密）：终端会话管理与交互
 
-另外，Relay 提供 Web 管理 API（登录、daemon profile、偏好配置、ws-ticket）。
-
-协议流转图请见：[SERVICE_PROTOCOL_FLOW.md](./SERVICE_PROTOCOL_FLOW.md)。
+说明：Web 登录和 Web 偏好配置已迁移到 Web 本地数据库，不再通过 Relay `/api/web-auth/*` 或 `/api/web-preferences`。
 
 ## 0. Token 定义
 
-- `MYTERMUX_WEB_LINK_TOKEN`：Web 前端申请 WS 链接授权使用，必须授权成功才可连接 Relay，保存在 Relay 配置中。
-- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 的链路授权 token，必须授权成功才可连接，保存在 Relay 配置中。
-- `MYTERMUX_DAEMON_TOKEN`：Web 前端操控 Daemon 的业务授权 token，保存在 Daemon 配置中（`auth.json`）。
+- `MYTERMUX_WEB_LINK_TOKEN`：Web 访问 Relay 管理 API 与 ws-ticket 的鉴权 token（Relay 配置）
+- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 的链路授权 token（Relay 配置）
+- `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token（Daemon 配置，存储在 `daemon.db`）
 
-## 1. Web 认证与安全
+## 1. Web 本地认证（非 Relay API）
 
-### 1.1 Cookie 与 CSRF
-
-- 会话 Cookie：`mytermux_web_session`（`HttpOnly`, `SameSite=Strict`）
-- CSRF Cookie：`mytermux_csrf_token`
-- 写操作（POST/PATCH/PUT）需要 `X-CSRF-Token` 请求头
-
-### 1.2 暴力破解防护
-
-- IP 维度：10 分钟最多 30 次尝试
-- 账号+IP 维度：
-  - 第 5 次失败后锁定 5 分钟
-  - 继续失败按 2 倍退避，最长 60 分钟
-- 成功登录后清零计数
+- 默认账号：`admin` / `mytermux`
+- 首次登录必须修改账号和密码
+- 存储位置：浏览器 IndexedDB（`mytermux_web_db`）
+- 会话、快捷键、Relay 地址与 Web Link Token 都在 Web 本地数据库中管理
 
 ## 2. Relay HTTP API
 
-### 2.1 认证接口
+当 Relay 配置了 `MYTERMUX_WEB_LINK_TOKEN` 时，以下管理 API 必须带请求头：
 
-#### `POST /api/web-auth/login`
-
-- 按用户名/密码模式登录。
-- 首次初始化默认管理员账号：`admin` / `mytermux`。
-- 若返回 `mustChangePassword=true`，表示必须先调用修改凭据接口。
-
-请求：
-
-```json
-{
-  "username": "admin",
-  "password": "******"
-}
+```http
+x-mytermux-web-link-token: <token>
 ```
 
-响应：
-
-```json
-{
-  "success": true,
-  "authenticated": true,
-  "username": "admin",
-  "mustChangePassword": true,
-  "expiresAt": 1730000000000
-}
-```
-
-#### `POST /api/web-auth/change-credentials`
-
-- 需要登录 + CSRF
-- 用于首次登录后强制修改账号和密码
-
-请求：
-
-```json
-{
-  "username": "new-admin",
-  "password": "new-password"
-}
-```
-
-响应：
-
-```json
-{
-  "success": true,
-  "authenticated": true,
-  "username": "new-admin",
-  "mustChangePassword": false,
-  "expiresAt": 1730000000000
-}
-```
-
-#### `POST /api/web-auth/logout`
-
-- 需要登录 + CSRF
-
-响应：
-
-```json
-{ "success": true }
-```
-
-#### `GET /api/web-auth/me`
-
-响应：
-
-```json
-{
-  "authenticated": true,
-  "username": "admin",
-  "mustChangePassword": false,
-  "expiresAt": 1730000000000
-}
-```
-
-#### `GET /api/web-auth/csrf`
-
-响应：
-
-```json
-{
-  "csrfToken": "..."
-}
-```
-
-### 2.2 ws-ticket
-
-#### `POST /api/ws-ticket`
-
-- 需要登录 + CSRF
-- 请求体必须带 `profileId`
-- 若 Relay 配置了 `MYTERMUX_WEB_LINK_TOKEN`，请求体必须携带一致的 `webLinkToken`
-
-请求：
-
-```json
-{
-  "profileId": "profile-uuid",
-  "webLinkToken": "relay-web-link-token"
-}
-```
-
-响应：
-
-```json
-{
-  "ticket": "base64url-token",
-  "expiresAt": 1730000000000,
-  "profileId": "profile-uuid",
-  "daemonId": "daemon-123"
-}
-```
-
-说明：
-
-- ticket 一次性消费
-- 有效期 60 秒
-- client 连接 `/ws` 时必须携带 `?ticket=...`
-
-### 2.3 Daemon 管理
+### 2.1 Daemon 管理
 
 #### `GET /api/daemons`
 
@@ -217,45 +90,44 @@ MyTermux 协议分为两层：
 
 - 均已禁用（返回 `405`）
 
-### 2.4 Web 偏好配置
+### 2.2 ws-ticket
 
-#### `GET /api/web-preferences`
+#### `POST /api/ws-ticket`
 
-响应：
-
-```json
-{
-  "shortcuts": [
-    { "id": "ctrl-c", "label": "Ctrl+C", "value": "\u0003" }
-  ],
-  "commonChars": ["/", "~", "|"],
-  "relayUrl": "ws://127.0.0.1:62200/ws",
-  "webLinkToken": "relay-web-link-token",
-  "updatedAt": 1730000000000
-}
-```
-
-#### `PUT /api/web-preferences`
+- 请求体必须带 `profileId`
+- 当开启 `MYTERMUX_WEB_LINK_TOKEN` 时，需通过请求头 `x-mytermux-web-link-token` 或请求体 `webLinkToken` 提供一致 token
 
 请求：
 
 ```json
 {
-  "shortcuts": [
-    { "id": "ctrl-c", "label": "Ctrl+C", "value": "\u0003" }
-  ],
-  "commonChars": ["/", "~", "|"],
-  "relayUrl": "ws://127.0.0.1:62200/ws",
-  "webLinkToken": "relay-web-link-token"
+  "profileId": "profile-uuid"
 }
 ```
+
+响应：
+
+```json
+{
+  "ticket": "base64url-token",
+  "expiresAt": 1730000000000,
+  "profileId": "profile-uuid",
+  "daemonId": "daemon-123"
+}
+```
+
+说明：
+
+- ticket 一次性消费
+- 有效期 60 秒
+- client 连接 `/ws` 时必须携带 `?ticket=...`
 
 ## 3. 传输层协议（WebSocket）
 
 连接地址：
 
-- 本地开发/测试：`ws://<host>:<port>/ws`（无证书）
-- 生产部署：通过 Nginx 反向代理对外提供 `wss://<domain>/ws`（必须启用证书）
+- 本地开发/测试：`ws://<host>:<port>/ws`
+- 生产部署：`wss://<domain>/ws`（通过 Nginx 反向代理）
 
 默认端口：
 
@@ -278,7 +150,7 @@ interface TransportMessage {
 ### 3.2 `register`
 
 - daemon 注册时可带：
-  - `daemonLinkToken`（对应 `MYTERMUX_DAEMON_LINK_TOKEN`，用于连接 Relay 授权）
+  - `daemonLinkToken`（对应 `MYTERMUX_DAEMON_LINK_TOKEN`）
   - `daemonToken`（对应 `MYTERMUX_DAEMON_TOKEN`，兼容旧字段 `accessToken`）
 - client 注册路径要求已通过 ws-ticket 准入
 
@@ -296,78 +168,5 @@ interface TransportMessage {
   "success": true,
   "daemonId": "daemon-1",
   "publicKey": "..."
-}
-```
-
-失败示例（client）：
-
-```json
-{
-  "success": false,
-  "error": "Access Token 无效或 Daemon 未连接"
-}
-```
-
-## 4. 应用层协议（E2E 加密）
-
-### 4.1 通用结构
-
-```ts
-interface AppMessage {
-  action:
-    | 'session:create'
-    | 'session:created'
-    | 'session:list'
-    | 'session:list_response'
-    | 'session:close'
-    | 'session:closed'
-    | 'session:input'
-    | 'session:output'
-    | 'session:resize'
-    | 'error';
-  messageId?: string;
-}
-```
-
-### 4.2 会话模型
-
-```ts
-type SessionType = 'terminal';
-
-interface SessionInfo {
-  id: string;
-  type: 'terminal';
-  status: 'starting' | 'running' | 'stopped' | 'error';
-  pid?: number;
-  createdAt: number;
-  title: string;
-  outputHistory?: string;
-}
-
-interface SessionOptions {
-  cwd?: string;
-  shell?: string;
-  startupCommand?: string;
-  cols?: number;
-  rows?: number;
-}
-```
-
-`startupCommand` 用于会话创建后自动执行默认命令（如 `zsh`、`tmux` 或自定义命令）。
-
-## 5. 健康检查
-
-### `GET /health`
-
-```json
-{
-  "status": "ok",
-  "timestamp": 1730000000000,
-  "version": "1.0.0",
-  "connections": {
-    "daemons": 1,
-    "clients": 2,
-    "accessTokens": 1
-  }
 }
 ```

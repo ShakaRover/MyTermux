@@ -6,19 +6,17 @@
  */
 
 import { EventEmitter } from 'events';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
+import { mkdirSync } from 'node:fs';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import type { KeyPair } from '@mytermux/shared';
 import {
   generateAccessToken,
   generateKeyPair,
   deriveSharedSecret,
 } from '@mytermux/shared';
-
-// ============================================================================
-// 类型定义
-// ============================================================================
 
 /** 已认证的客户端信息 */
 export interface AuthenticatedClient {
@@ -38,8 +36,6 @@ interface AuthData {
   deviceId: string;
   /** 标准命名：MYTERMUX_DAEMON_TOKEN（客户端使用此 Token 连接） */
   daemonToken: string;
-  /** 兼容旧字段：Access Token */
-  accessToken?: string;
   /** 本地公钥 */
   publicKey: string;
   /** 本地私钥（导出格式） */
@@ -56,73 +52,204 @@ export interface AuthManagerEvents {
   clientAuthenticated: (client: AuthenticatedClient) => void;
 }
 
-// ============================================================================
-// 常量定义
-// ============================================================================
-
 /** 配置文件目录 */
 const CONFIG_DIR = path.join(os.homedir(), '.mytermux');
+/** Daemon 数据库 */
+const DAEMON_DB_FILE = path.join(CONFIG_DIR, 'daemon.db');
+/** 旧版认证数据文件（仅迁移读取） */
+const LEGACY_AUTH_DATA_FILE = path.join(CONFIG_DIR, 'auth.json');
 
-/** 认证数据文件路径 */
-const AUTH_DATA_FILE = path.join(CONFIG_DIR, 'auth.json');
+function createErrno(code: string, message: string): NodeJS.ErrnoException {
+  const error = new Error(message) as NodeJS.ErrnoException;
+  error.code = code;
+  return error;
+}
 
-// ============================================================================
-// 导出工具函数
-// ============================================================================
+function generateDeviceId(): string {
+  const array = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(array)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function parseAuthenticatedClients(raw: unknown): AuthenticatedClient[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const normalized: AuthenticatedClient[] = [];
+  for (const item of raw) {
+    if (
+      typeof item !== 'object' ||
+      item === null ||
+      typeof (item as Record<string, unknown>)['clientId'] !== 'string' ||
+      typeof (item as Record<string, unknown>)['publicKey'] !== 'string' ||
+      typeof (item as Record<string, unknown>)['authenticatedAt'] !== 'number'
+    ) {
+      continue;
+    }
+
+    const client = item as Record<string, unknown>;
+    const name = typeof client['name'] === 'string' ? client['name'] : undefined;
+    normalized.push({
+      clientId: String(client['clientId']),
+      publicKey: String(client['publicKey']),
+      authenticatedAt: Number(client['authenticatedAt']),
+      ...(name ? { name } : {}),
+    });
+  }
+
+  return normalized;
+}
+
+function ensureSchema(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daemon_auth (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      device_id TEXT NOT NULL,
+      daemon_token TEXT NOT NULL,
+      public_key TEXT NOT NULL,
+      private_key_jwk TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS authenticated_clients (
+      client_id TEXT PRIMARY KEY,
+      public_key TEXT NOT NULL,
+      authenticated_at INTEGER NOT NULL,
+      name TEXT,
+      updated_at INTEGER NOT NULL
+    );
+  `);
+}
+
+function openDaemonDb(): DatabaseSync {
+  mkdirSync(CONFIG_DIR, { recursive: true });
+  const db = new DatabaseSync(DAEMON_DB_FILE);
+  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA foreign_keys = ON;');
+  ensureSchema(db);
+  return db;
+}
+
+async function migrateLegacyAuthJsonIfNeeded(db: DatabaseSync): Promise<boolean> {
+  const existing = db.prepare(`
+    SELECT daemon_token
+    FROM daemon_auth
+    WHERE id = 1
+    LIMIT 1
+  `).get() as { daemon_token: string } | undefined;
+  if (existing?.daemon_token) {
+    return false;
+  }
+
+  let content: string;
+  try {
+    content = await fs.readFile(LEGACY_AUTH_DATA_FILE, 'utf-8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+
+  const raw = JSON.parse(content) as Record<string, unknown>;
+  const daemonToken = typeof raw.daemonToken === 'string'
+    ? raw.daemonToken
+    : (typeof raw.accessToken === 'string' ? raw.accessToken : generateAccessToken());
+  const deviceId = typeof raw.deviceId === 'string' && raw.deviceId
+    ? raw.deviceId
+    : generateDeviceId();
+  const publicKey = typeof raw.publicKey === 'string' ? raw.publicKey : '';
+  const privateKeyJwk = raw.privateKeyJwk;
+  if (!publicKey || typeof privateKeyJwk !== 'object' || privateKeyJwk === null) {
+    return false;
+  }
+
+  const clients = parseAuthenticatedClients(raw.authenticatedClients);
+  const now = Date.now();
+
+  db.exec('BEGIN');
+  try {
+    db.prepare(`
+      INSERT INTO daemon_auth (id, device_id, daemon_token, public_key, private_key_jwk, updated_at)
+      VALUES (1, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        device_id = excluded.device_id,
+        daemon_token = excluded.daemon_token,
+        public_key = excluded.public_key,
+        private_key_jwk = excluded.private_key_jwk,
+        updated_at = excluded.updated_at
+    `).run(deviceId, daemonToken, publicKey, JSON.stringify(privateKeyJwk), now);
+
+    db.prepare('DELETE FROM authenticated_clients').run();
+    const insertClient = db.prepare(`
+      INSERT INTO authenticated_clients (client_id, public_key, authenticated_at, name, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(client_id) DO UPDATE SET
+        public_key = excluded.public_key,
+        authenticated_at = excluded.authenticated_at,
+        name = excluded.name,
+        updated_at = excluded.updated_at
+    `);
+
+    for (const client of clients) {
+      insertClient.run(
+        client.clientId,
+        client.publicKey,
+        client.authenticatedAt,
+        client.name ?? null,
+        now,
+      );
+    }
+
+    db.exec('COMMIT');
+    return true;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
 
 /**
  * I12: 读取并返回 Access Token（供 CLI token 命令使用）
  *
- * 封装了文件读取、JSON 解析和旧版数据迁移逻辑，
- * 避免在 index.ts 中重复迁移代码
- *
- * @returns { token, migrated } token 为 Access Token，migrated 表示是否进行了数据迁移
- * @throws 文件不存在时抛出 ENOENT 错误
+ * @returns { token, migrated } token 为 Access Token，migrated 表示是否进行了旧版数据迁移
+ * @throws 数据不存在时抛出 ENOENT 错误
  */
 export async function readAccessToken(): Promise<{ token: string; migrated: boolean }> {
-  const content = await fs.readFile(AUTH_DATA_FILE, 'utf-8');
-  const data = JSON.parse(content) as Record<string, unknown>;
+  const db = openDaemonDb();
+  try {
+    let migrated = false;
+    let row = db.prepare(`
+      SELECT daemon_token
+      FROM daemon_auth
+      WHERE id = 1
+      LIMIT 1
+    `).get() as { daemon_token: string } | undefined;
 
-  let migrated = false;
-  const daemonToken = typeof data.daemonToken === 'string' ? data.daemonToken : '';
-  const accessToken = typeof data.accessToken === 'string' ? data.accessToken : '';
-  let resolvedToken = daemonToken || accessToken;
+    if (!row) {
+      migrated = await migrateLegacyAuthJsonIfNeeded(db);
+      row = db.prepare(`
+        SELECT daemon_token
+        FROM daemon_auth
+        WHERE id = 1
+        LIMIT 1
+      `).get() as { daemon_token: string } | undefined;
+    }
 
-  if (!resolvedToken) {
-    const { generateAccessToken: generateToken } = await import('@mytermux/shared');
-    resolvedToken = generateToken();
-    migrated = true;
-  }
-  if (data.daemonToken !== resolvedToken) {
-    data.daemonToken = resolvedToken;
-    migrated = true;
-  }
-  // 保留旧字段，确保历史代码与脚本兼容
-  if (data.accessToken !== resolvedToken) {
-    data.accessToken = resolvedToken;
-    migrated = true;
-  }
+    if (!row?.daemon_token) {
+      throw createErrno('ENOENT', '认证数据不存在，请先启动 daemon');
+    }
 
-  // 如果进行了迁移，写回文件
-  if (migrated) {
-    await fs.writeFile(AUTH_DATA_FILE, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
+    return { token: row.daemon_token, migrated };
+  } finally {
+    db.close();
   }
-
-  return { token: resolvedToken, migrated };
 }
-
-// ============================================================================
-// 认证管理器类
-// ============================================================================
 
 /**
  * 认证管理器
- *
- * 特性：
- * - 生成和管理 Access Token
- * - 处理客户端认证
- * - 管理密钥存储
- * - 派生共享密钥用于 E2E 加密
  */
 export class AuthManager extends EventEmitter {
   /** Access Token */
@@ -140,53 +267,45 @@ export class AuthManager extends EventEmitter {
     super();
   }
 
-  // --------------------------------------------------------------------------
-  // 公共方法
-  // --------------------------------------------------------------------------
-
   /**
    * 初始化认证管理器
    * 加载或生成密钥对、设备 ID 和 Access Token
    */
   async initialize(): Promise<void> {
     await this.ensureConfigDir();
+    const db = openDaemonDb();
+    try {
+      const existingData = await this.loadAuthData(db);
 
-    const existingData = await this.loadAuthData();
+      if (existingData) {
+        this._deviceId = existingData.deviceId;
+        this._accessToken = existingData.daemonToken;
+        this.authenticatedClients = existingData.authenticatedClients;
 
-    if (existingData) {
-      // 恢复现有数据
-      this._deviceId = existingData.deviceId;
-      this._accessToken = existingData.daemonToken;
-      this.authenticatedClients = existingData.authenticatedClients;
+        const privateKey = await crypto.subtle.importKey(
+          'jwk',
+          existingData.privateKeyJwk,
+          {
+            name: 'ECDH',
+            namedCurve: 'P-256',
+          },
+          true,
+          ['deriveKey', 'deriveBits'],
+        );
 
-      // 从 JWK 导入私钥
-      const privateKey = await crypto.subtle.importKey(
-        'jwk',
-        existingData.privateKeyJwk,
-        {
-          name: 'ECDH',
-          namedCurve: 'P-256',
-        },
-        true,
-        ['deriveKey', 'deriveBits']
-      );
-
-      this.keyPair = {
-        publicKey: existingData.publicKey,
-        privateKey,
-      };
-
-      // 如果 loadAuthData 进行了旧版数据迁移（如补充 accessToken、重命名字段），
-      // 将迁移结果持久化回磁盘，避免每次启动重复迁移
-      await this.saveAuthData();
-    } else {
-      // 生成新数据
-      this._deviceId = this.generateDeviceId();
-      this._accessToken = generateAccessToken();
-      this.keyPair = await generateKeyPair();
-      this.authenticatedClients = [];
-
-      await this.saveAuthData();
+        this.keyPair = {
+          publicKey: existingData.publicKey,
+          privateKey,
+        };
+      } else {
+        this._deviceId = generateDeviceId();
+        this._accessToken = generateAccessToken();
+        this.keyPair = await generateKeyPair();
+        this.authenticatedClients = [];
+        await this.saveAuthData(db);
+      }
+    } finally {
+      db.close();
     }
   }
 
@@ -199,11 +318,9 @@ export class AuthManager extends EventEmitter {
 
   /**
    * 重新生成 Access Token
-   * @returns 新的 Access Token
    */
   async regenerateToken(): Promise<string> {
     this._accessToken = generateAccessToken();
-    // 清除所有已认证客户端（Token 变了，旧客户端需要重新认证）
     this.authenticatedClients = [];
     this.sharedKeyCache.clear();
     await this.saveAuthData();
@@ -213,19 +330,13 @@ export class AuthManager extends EventEmitter {
 
   /**
    * 完成客户端认证
-   * @param clientId 客户端设备 ID
-   * @param clientPublicKey 客户端公钥
-   * @param clientName 客户端名称（可选）
    */
   async completeAuthentication(
     clientId: string,
     clientPublicKey: string,
-    clientName?: string
+    clientName?: string,
   ): Promise<void> {
-    // 检查是否已认证
-    const existingIndex = this.authenticatedClients.findIndex(
-      (c) => c.clientId === clientId
-    );
+    const existingIndex = this.authenticatedClients.findIndex((c) => c.clientId === clientId);
 
     const client: AuthenticatedClient = {
       clientId,
@@ -238,84 +349,61 @@ export class AuthManager extends EventEmitter {
     }
 
     if (existingIndex >= 0) {
-      // 更新现有认证
       this.authenticatedClients[existingIndex] = client;
     } else {
-      // 添加新认证
       this.authenticatedClients.push(client);
     }
 
-    // 派生并缓存共享密钥
     await this.deriveAndCacheSharedKey(clientId, clientPublicKey);
-
-    // 保存认证数据
     await this.saveAuthData();
-
     this.emit('clientAuthenticated', client);
   }
 
   /**
    * 获取共享密钥
-   * @param clientId 客户端 ID
-   * @returns 共享密钥（如果已认证）
    */
   async getSharedKey(clientId: string): Promise<CryptoKey | null> {
-    // 尝试从缓存获取
     const cached = this.sharedKeyCache.get(clientId);
     if (cached) {
       return cached;
     }
 
-    // 查找认证信息
     const client = this.authenticatedClients.find((c) => c.clientId === clientId);
     if (!client) {
       return null;
     }
 
-    // 派生并缓存共享密钥
     return this.deriveAndCacheSharedKey(clientId, client.publicKey);
   }
 
   /**
    * 检查客户端是否已认证
-   * @param clientId 客户端 ID
    */
   isAuthenticated(clientId: string): boolean {
     return this.authenticatedClients.some((c) => c.clientId === clientId);
   }
 
   /**
-   * 更新已认证客户端的公钥（用于重连时）
-   * @param clientId 客户端 ID
-   * @param newPublicKey 新的公钥
+   * 更新已认证客户端公钥
    */
   async updateClientPublicKey(
     clientId: string,
-    newPublicKey: string
+    newPublicKey: string,
   ): Promise<void> {
     const client = this.authenticatedClients.find((c) => c.clientId === clientId);
     if (!client) {
       throw new Error(`客户端未认证: ${clientId}`);
     }
 
-    // 更新公钥
     client.publicKey = newPublicKey;
-
-    // 清除旧的共享密钥缓存
     this.sharedKeyCache.delete(clientId);
-
-    // 派生并缓存新的共享密钥
     await this.deriveAndCacheSharedKey(clientId, newPublicKey);
-
-    // 保存认证数据
     await this.saveAuthData();
-
     console.log(`已更新客户端公钥: ${clientId}`);
   }
 
   /**
    * 移除客户端认证
-   * @param clientId 客户端 ID
    */
   async removeAuthentication(clientId: string): Promise<void> {
     const index = this.authenticatedClients.findIndex((c) => c.clientId === clientId);
@@ -327,7 +415,7 @@ export class AuthManager extends EventEmitter {
   }
 
   /**
-   * 获取所有已认证的客户端
+   * 获取所有已认证客户端
    */
   getAuthenticatedClients(): AuthenticatedClient[] {
     return [...this.authenticatedClients];
@@ -347,95 +435,128 @@ export class AuthManager extends EventEmitter {
     return this.keyPair?.publicKey ?? '';
   }
 
-  // --------------------------------------------------------------------------
-  // 私有方法
-  // --------------------------------------------------------------------------
-
-  /**
-   * 生成设备 ID
-   */
-  private generateDeviceId(): string {
-    const array = crypto.getRandomValues(new Uint8Array(16));
-    return Array.from(array)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-  }
-
-  /**
-   * 确保配置目录存在
-   */
   private async ensureConfigDir(): Promise<void> {
     await fs.mkdir(CONFIG_DIR, { recursive: true });
   }
 
-  /**
-   * 加载认证数据
-   * 文件不存在时返回 null，文件损坏或解析失败时抛出错误
-   */
-  private async loadAuthData(): Promise<AuthData | null> {
-    let content: string;
-    try {
-      content = await fs.readFile(AUTH_DATA_FILE, 'utf-8');
-    } catch (error) {
-      // 文件不存在：首次启动，返回 null
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+  private async loadAuthData(db: DatabaseSync): Promise<AuthData | null> {
+    let row = db.prepare(`
+      SELECT device_id, daemon_token, public_key, private_key_jwk
+      FROM daemon_auth
+      WHERE id = 1
+      LIMIT 1
+    `).get() as {
+      device_id: string;
+      daemon_token: string;
+      public_key: string;
+      private_key_jwk: string;
+    } | undefined;
+
+    if (!row) {
+      const migrated = await migrateLegacyAuthJsonIfNeeded(db);
+      if (!migrated) {
         return null;
       }
-      throw error;
+      row = db.prepare(`
+        SELECT device_id, daemon_token, public_key, private_key_jwk
+        FROM daemon_auth
+        WHERE id = 1
+        LIMIT 1
+      `).get() as {
+        device_id: string;
+        daemon_token: string;
+        public_key: string;
+        private_key_jwk: string;
+      } | undefined;
+      if (!row) {
+        return null;
+      }
     }
 
-    // 文件存在但解析失败时，让错误向上传播
-    const raw = JSON.parse(content) as Record<string, unknown>;
-    const daemonToken = typeof raw.daemonToken === 'string' ? raw.daemonToken : '';
-    const accessToken = typeof raw.accessToken === 'string' ? raw.accessToken : '';
-    const resolvedToken = daemonToken || accessToken || generateAccessToken();
-
-    const authenticatedClients = Array.isArray(raw.authenticatedClients)
-      ? raw.authenticatedClients as AuthenticatedClient[]
-      : [];
+    const clients = db.prepare(`
+      SELECT client_id, public_key, authenticated_at, name
+      FROM authenticated_clients
+      ORDER BY authenticated_at ASC
+    `).all() as Array<{
+      client_id: string;
+      public_key: string;
+      authenticated_at: number;
+      name: string | null;
+    }>;
 
     return {
-      deviceId: String(raw.deviceId ?? ''),
-      daemonToken: resolvedToken,
-      accessToken: resolvedToken,
-      publicKey: String(raw.publicKey ?? ''),
-      privateKeyJwk: raw.privateKeyJwk as JsonWebKey,
-      authenticatedClients,
+      deviceId: row.device_id,
+      daemonToken: row.daemon_token,
+      publicKey: row.public_key,
+      privateKeyJwk: JSON.parse(row.private_key_jwk) as JsonWebKey,
+      authenticatedClients: clients.map((client) => ({
+        clientId: client.client_id,
+        publicKey: client.public_key,
+        authenticatedAt: client.authenticated_at,
+        ...(client.name ? { name: client.name } : {}),
+      })),
     };
   }
 
-  /**
-   * 保存认证数据
-   */
-  private async saveAuthData(): Promise<void> {
+  private async saveAuthData(dbInstance?: DatabaseSync): Promise<void> {
     if (!this.keyPair) {
       throw new Error('密钥对未初始化');
     }
 
-    // 导出私钥为 JWK 格式
-    const privateKeyJwk = await crypto.subtle.exportKey(
-      'jwk',
-      this.keyPair.privateKey
-    );
+    const privateKeyJwk = await crypto.subtle.exportKey('jwk', this.keyPair.privateKey);
+    const now = Date.now();
 
-    const data: AuthData = {
-      deviceId: this._deviceId,
-      daemonToken: this._accessToken,
-      accessToken: this._accessToken,
-      publicKey: this.keyPair.publicKey,
-      privateKeyJwk,
-      authenticatedClients: this.authenticatedClients,
-    };
+    const db = dbInstance ?? openDaemonDb();
+    const needClose = !dbInstance;
+    try {
+      db.exec('BEGIN');
 
-    await fs.writeFile(AUTH_DATA_FILE, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
+      db.prepare(`
+        INSERT INTO daemon_auth (id, device_id, daemon_token, public_key, private_key_jwk, updated_at)
+        VALUES (1, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          device_id = excluded.device_id,
+          daemon_token = excluded.daemon_token,
+          public_key = excluded.public_key,
+          private_key_jwk = excluded.private_key_jwk,
+          updated_at = excluded.updated_at
+      `).run(
+        this._deviceId,
+        this._accessToken,
+        this.keyPair.publicKey,
+        JSON.stringify(privateKeyJwk),
+        now,
+      );
+
+      db.prepare('DELETE FROM authenticated_clients').run();
+      const insertClient = db.prepare(`
+        INSERT INTO authenticated_clients (client_id, public_key, authenticated_at, name, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      for (const client of this.authenticatedClients) {
+        insertClient.run(
+          client.clientId,
+          client.publicKey,
+          client.authenticatedAt,
+          client.name ?? null,
+          now,
+        );
+      }
+
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    } finally {
+      if (needClose) {
+        db.close();
+      }
+    }
   }
 
-  /**
-   * 派生并缓存共享密钥
-   */
   private async deriveAndCacheSharedKey(
     clientId: string,
-    clientPublicKey: string
+    clientPublicKey: string,
   ): Promise<CryptoKey> {
     if (!this.keyPair) {
       throw new Error('密钥对未初始化');
@@ -443,17 +564,13 @@ export class AuthManager extends EventEmitter {
 
     const sharedKey = await deriveSharedSecret(
       this.keyPair.privateKey,
-      clientPublicKey
+      clientPublicKey,
     );
 
     this.sharedKeyCache.set(clientId, sharedKey);
     return sharedKey;
   }
 }
-
-// ============================================================================
-// 类型增强
-// ============================================================================
 
 // 为 EventEmitter 添加类型支持
 export declare interface AuthManager {

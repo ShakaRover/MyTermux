@@ -3,9 +3,6 @@ import * as path from 'node:path';
 import { DeviceRegistry } from './device-registry.js';
 import { MessageRouter } from './message-router.js';
 import { WebSocketHandler } from './websocket-handler.js';
-import { LoginBruteforceGuard } from './auth/bruteforce.js';
-import { hashPassword } from './auth/password.js';
-import { WebSessionService } from './auth/session.js';
 import { WsTicketService } from './auth/ws-ticket.js';
 import { createServer } from './server.js';
 import { RelayStorage } from './storage/index.js';
@@ -17,8 +14,6 @@ export interface RelayRuntime {
   wsHandler: WebSocketHandler;
   app: ReturnType<typeof createServer>;
   storage: RelayStorage;
-  sessionService: WebSessionService;
-  loginGuard: LoginBruteforceGuard;
   wsTicketService: WsTicketService;
 }
 
@@ -34,10 +29,6 @@ export function initializeRelayRuntime(): RelayRuntime {
   }
 
   const storage = new RelayStorage(dbPath, masterKey);
-  ensureDefaultAdmin(storage);
-
-  const sessionService = new WebSessionService(storage);
-  const loginGuard = new LoginBruteforceGuard(storage);
   const wsTicketService = new WsTicketService();
 
   const deviceRegistry = new DeviceRegistry();
@@ -51,8 +42,6 @@ export function initializeRelayRuntime(): RelayRuntime {
   const app = createServer({
     deviceRegistry,
     storage,
-    sessionService,
-    loginGuard,
     wsTicketService,
     ...(webLinkToken ? { webLinkToken } : {}),
   });
@@ -63,18 +52,6 @@ export function initializeRelayRuntime(): RelayRuntime {
     wsHandler,
     app,
     storage,
-    sessionService,
-    loginGuard,
     wsTicketService,
   };
-}
-
-function ensureDefaultAdmin(storage: RelayStorage): void {
-  const existingAdmin = storage.getAdmin();
-  if (existingAdmin) {
-    return;
-  }
-
-  storage.upsertAdmin('admin', hashPassword('mytermux'), true);
-  console.warn('[Relay] 首次初始化默认管理员账号: admin / mytermux（首次登录后必须修改账号和密码）');
 }

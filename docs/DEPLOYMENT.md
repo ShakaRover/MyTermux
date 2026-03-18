@@ -12,7 +12,6 @@
 - Node.js >= 20
 - pnpm >= 9
 - 建议 Linux + systemd
-- 生产环境必须 HTTPS/TLS（由 Nginx 终止 TLS）
 
 ## 2. 构建
 
@@ -21,11 +20,21 @@ pnpm install
 pnpm turbo run build
 ```
 
-## 3. Relay 部署
+## 3. 数据目录与职责
 
-## 3.1 必要环境变量
+默认目录：`~/.mytermux`
 
-- `MYTERMUX_WEB_LINK_TOKEN`：Web 前端申请 ws-ticket 前置 token（推荐开启）
+- Relay：`relay.db`（daemon profile）
+- Daemon：`daemon.db`（设备身份、token、已认证客户端）
+- Web：浏览器 IndexedDB（`mytermux_web_db`）
+
+说明：旧 `~/.mytermux/auth.json` 仅用于 daemon 启动时一次性迁移到 `daemon.db`。
+
+## 4. Relay 部署
+
+### 4.1 必要环境变量
+
+- `MYTERMUX_WEB_LINK_TOKEN`：Web 访问 Relay 管理 API 与 ws-ticket 的鉴权 token（推荐开启）
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 前置 token（推荐开启）
 - `RELAY_WEB_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
 - `RELAY_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/relay.db`）
@@ -39,20 +48,12 @@ export RELAY_WEB_MASTER_KEY='<32-byte-random-secret>'
 export RELAY_DB_PATH=/var/lib/mytermux/relay.db
 ```
 
-## 3.2 启动 Relay
+### 4.2 启动 Relay
 
 说明：生产场景下 Relay 监听内网明文端口（默认 `127.0.0.1:62200`），由 Nginx 负责证书与 TLS。
 
-前台验证：
-
 ```bash
 pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
-```
-
-后台运行：
-
-```bash
-pnpm --filter @mytermux/relay start
 ```
 
 健康检查：
@@ -61,13 +62,7 @@ pnpm --filter @mytermux/relay start
 curl http://127.0.0.1:62200/health
 ```
 
-默认 Web 管理端账号：
-
-- 用户名：`admin`
-- 密码：`mytermux`
-- 首次登录后必须先修改账号和密码，再进行其他管理操作
-
-## 4. Daemon 部署
+## 5. Daemon 部署
 
 在被控主机运行：
 
@@ -83,7 +78,7 @@ pnpm --filter @mytermux/daemon token
 
 Daemon 默认本地监听：`http://127.0.0.1:62300`
 
-## 5. Web 部署
+## 6. Web 部署
 
 ```bash
 # 仅当 Relay 开启 MYTERMUX_WEB_LINK_TOKEN 时需要
@@ -94,9 +89,7 @@ pnpm --filter @mytermux/web build
 
 产物目录：`packages/web/dist`
 
-建议与 relay 同域部署（便于 Cookie/CSRF 同域策略）。
-
-## 6. Nginx 示例（生产必选）
+## 7. Nginx 示例（生产必选）
 
 ```nginx
 server {
@@ -133,9 +126,9 @@ server {
 }
 ```
 
-## 7. systemd 示例
+## 8. systemd 示例
 
-### 7.1 relay.service
+### 8.1 relay.service
 
 ```ini
 [Unit]
@@ -159,7 +152,7 @@ Environment=RELAY_DB_PATH=/var/lib/mytermux/relay.db
 WantedBy=multi-user.target
 ```
 
-### 7.2 daemon.service
+### 8.2 daemon.service
 
 ```ini
 [Unit]
@@ -180,27 +173,15 @@ Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
 WantedBy=multi-user.target
 ```
 
-## 8. 安全建议
+## 9. 安全建议
 
 - 本地开发/测试不要配置证书，统一走 HTTP/WS
 - 生产必须由 Nginx 提供 TLS，外部流量统一走 HTTPS/WSS
-- 首次登录后必须立即修改默认管理员账号密码
+- Web 本地默认账号 `admin` / `mytermux` 仅用于初始化，首次登录必须改密
 - `RELAY_WEB_MASTER_KEY` 必须高强度随机并妥善保管
 - `MYTERMUX_WEB_LINK_TOKEN` / `MYTERMUX_DAEMON_LINK_TOKEN` 仅通过可信渠道分发
 - `MYTERMUX_DAEMON_TOKEN` 仅通过可信渠道分发，并定期轮换
-- 监控登录失败与锁定事件
-
-## 9. 运行时文件
-
-默认目录：`~/.mytermux`
-
-- `auth.json`
-- `daemon.pid`
-- `daemon.status`
-- `relay.pid`
-- `relay.log`
-- `relay.db`
 
 ## 10. 历史数据说明
 
-本版本不会自动迁移或删除历史版本目录，如需迁移请手动执行。
+本版本不会自动迁移或删除历史版本目录（daemon 的 `auth.json -> daemon.db` 除外）。

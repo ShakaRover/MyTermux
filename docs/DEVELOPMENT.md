@@ -2,37 +2,45 @@
 
 ## 1. 当前产品模型
 
-MyTermux 已切换为：
+MyTermux 当前职责边界：
 
-- Web 独立登录（非 daemon token 直登）
-- 登录后管理 daemon profile 并连接
-- 单活 daemon 连接模型（支持快速切换）
-- 终端会话仅 `terminal`
+- Web：本地登录与管理 UI（不走 Relay 登录）
+- Relay：中继与 profile 管理 API
+- Daemon：终端会话执行与 daemon token 管理
 
-## 2. 核心链路
+## 2. 数据边界（必须遵守）
 
-1. Relay 提供 Web Auth、Daemon 管理 API、ws-ticket、WebSocket 中继
-2. Daemon 向 Relay 注册并提供 `MYTERMUX_DAEMON_TOKEN`
-3. Web 首次登录默认账号 `admin` / `mytermux` 后必须先修改账号密码；随后按在线 daemon 自动生成 profile，并可在 Web 端配置 Relay 地址与 Web Link Token
-4. 应用层会话消息走 E2E 加密
+1. Web 只写浏览器本地数据库（IndexedDB：`mytermux_web_db`）
+2. Relay 只写 `relay.db`（daemon profile）
+3. Daemon 只写 `daemon.db`（设备身份/token/已认证客户端）
 
-Token 定义：
+禁止跨项目混用数据库。
 
-- `MYTERMUX_WEB_LINK_TOKEN`：Web -> Relay 链接前置 token（Relay 配置）
-- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon -> Relay 链接前置 token（Relay 配置）
+## 3. 核心链路
+
+1. Web 本地账号登录（默认 `admin` / `mytermux`，首次登录强制改密）
+2. Web 读取本地配置，调用 Relay 管理 API（必要时携带 `x-mytermux-web-link-token`）
+3. Relay 按在线 daemon 自动生成 profile，并签发 ws-ticket
+4. Web 用 ws-ticket 连接 Relay，Relay 路由到 Daemon
+5. 应用层会话消息走 E2E 加密
+
+## 4. Token 定义
+
+- `MYTERMUX_WEB_LINK_TOKEN`：Web -> Relay 管理 API 与 ws-ticket 鉴权（Relay 配置）
+- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon -> Relay 链路鉴权（Relay 配置）
 - `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token（Daemon 配置）
 
-## 3. 目录结构
+## 5. 目录结构
 
 ```text
 packages/
   shared/   协议与类型（SessionInfo.pid / startupCommand 等）
-  relay/    API + WS + SQLite（web_sessions/login_attempts/daemon_profiles/web_preferences）
-  daemon/   终端会话与 token 管理
-  web/      /login /daemons /sessions 页面与状态管理
+  relay/    API + WS + SQLite（daemon_profiles）
+  daemon/   终端会话与 daemon.db 持久化
+  web/      /login /daemons /sessions 页面与本地数据库状态管理
 ```
 
-## 4. 本地开发
+## 6. 本地开发
 
 约束：本地开发与联调统一无证书模型（HTTP + WS），不要配置 `TLS_CERT` / `TLS_KEY`，不要启用 `VITE_HTTPS`。
 
@@ -56,47 +64,6 @@ pnpm start:local:test
 - Relay WebSocket: `ws://127.0.0.1:62200/ws`
 - Daemon 本地状态监听: `http://127.0.0.1:62300`
 
-如需分别启动：
-
-```bash
-bash ./scripts/relay/start-fg.sh
-bash ./scripts/daemon/start-fg.sh
-bash ./scripts/web/start-fg.sh
-```
-
-分服务脚本（每个服务 3 个）：
-
-```bash
-# relay
-bash ./scripts/relay/start-fg.sh
-bash ./scripts/relay/start-bg.sh
-bash ./scripts/relay/stop.sh
-
-# daemon
-bash ./scripts/daemon/start-fg.sh
-bash ./scripts/daemon/start-bg.sh
-bash ./scripts/daemon/stop.sh
-
-# web
-bash ./scripts/web/start-fg.sh
-bash ./scripts/web/start-bg.sh
-bash ./scripts/web/stop.sh
-```
-
-## 5. 协议与类型关键点
-
-- `SessionType = 'terminal'`
-- `SessionInfo.pid?: number`
-- `TerminalSessionOptions.startupCommand?: string`
-- WebSocket client 必须先拿 `ws-ticket`
-
-## 6. 代码约定
-
-- 包作用域：`@mytermux/*`
-- CLI：`mytermux` / `mytermux-relay`
-- 术语：统一使用 `auth`（不再使用 `pairing`）
-- 运行目录：`~/.mytermux`
-
 ## 7. 常用命令
 
 ```bash
@@ -108,6 +75,12 @@ pnpm turbo run clean
 
 ## 8. 调试建议
 
-- 登录问题：默认账号密码为 `admin` / `mytermux`；首次登录必须先修改账号和密码，再执行其他管理操作
-- ws 连接问题：先看 `/api/ws-ticket` 再看 `/ws` 日志
-- daemon 连接问题：检查 `MYTERMUX_DAEMON_LINK_TOKEN`、`MYTERMUX_DAEMON_TOKEN` 与 daemon 在线状态
+- Web 登录问题：
+  - 先确认浏览器本地数据库是否被清理
+  - 默认账号为 `admin` / `mytermux`
+  - 首次登录必须先改账号密码
+- Relay 管理 API 401：
+  - 优先检查 `MYTERMUX_WEB_LINK_TOKEN` 与 `x-mytermux-web-link-token` 是否一致
+- Daemon token 问题：
+  - 检查 `~/.mytermux/daemon.db`
+  - 必要时重新执行 daemon 启动触发迁移/重建

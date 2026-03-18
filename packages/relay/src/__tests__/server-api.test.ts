@@ -4,9 +4,6 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DeviceRegistry } from '../device-registry';
 import { createServer } from '../server';
-import { LoginBruteforceGuard } from '../auth/bruteforce';
-import { hashPassword } from '../auth/password';
-import { WebSessionService } from '../auth/session';
 import { WsTicketService } from '../auth/ws-ticket';
 import { RelayStorage } from '../storage';
 
@@ -14,14 +11,12 @@ interface TestContext {
   tmpDir: string;
   deviceRegistry: DeviceRegistry;
   storage: RelayStorage;
-  sessionService: WebSessionService;
   wsTicketService: WsTicketService;
   app: ReturnType<typeof createServer>;
 }
 
 interface CreateTestContextOptions {
   webLinkToken?: string;
-  mustChangePassword?: boolean;
 }
 
 const contexts: TestContext[] = [];
@@ -41,18 +36,13 @@ afterEach(() => {
 function createTestContext(options: CreateTestContextOptions = {}): TestContext {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mytermux-relay-api-'));
   const storage = new RelayStorage(path.join(tmpDir, 'relay.db'), 'test-master-key');
-  storage.upsertAdmin('admin', hashPassword('secret-pass'), options.mustChangePassword ?? false);
 
   const deviceRegistry = new DeviceRegistry();
-  const sessionService = new WebSessionService(storage);
-  const loginGuard = new LoginBruteforceGuard(storage);
   const wsTicketService = new WsTicketService();
 
   const app = createServer({
     deviceRegistry,
     storage,
-    sessionService,
-    loginGuard,
     wsTicketService,
     ...(options.webLinkToken ? { webLinkToken: options.webLinkToken } : {}),
   });
@@ -61,53 +51,11 @@ function createTestContext(options: CreateTestContextOptions = {}): TestContext 
     tmpDir,
     storage,
     deviceRegistry,
-    sessionService,
     wsTicketService,
     app,
   };
   contexts.push(context);
   return context;
-}
-
-function extractCookieHeader(response: Response): string {
-  const setCookies = getSetCookies(response);
-  const latestByName = new Map<string, string>();
-
-  for (const cookie of setCookies) {
-    const pair = cookie.split(';')[0];
-    if (!pair) {
-      continue;
-    }
-    const equalIndex = pair.indexOf('=');
-    if (equalIndex <= 0) {
-      continue;
-    }
-    const name = pair.slice(0, equalIndex).trim();
-    if (!name) {
-      continue;
-    }
-    latestByName.set(name, pair.trim());
-  }
-
-  return Array.from(latestByName.values()).join('; ');
-}
-
-function getSetCookies(response: Response): string[] {
-  const headersWithGetSetCookie = response.headers as unknown as {
-    getSetCookie?: () => string[];
-  };
-
-  if (typeof headersWithGetSetCookie.getSetCookie === 'function') {
-    return headersWithGetSetCookie.getSetCookie();
-  }
-
-  const raw = response.headers.get('set-cookie');
-  if (!raw) {
-    return [];
-  }
-
-  // 兼容不支持 getSetCookie 的环境，按 cookie 边界切分
-  return raw.split(/,(?=[^;,]+=)/);
 }
 
 function createMockWs() {
@@ -118,37 +66,17 @@ function createMockWs() {
   } as unknown as import('ws').WebSocket;
 }
 
-async function loginAndGetAuth(
-  app: ReturnType<typeof createServer>,
-): Promise<{ cookies: string; csrfToken: string }> {
-  const loginResponse = await app.request('/api/web-auth/login', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ username: 'admin', password: 'secret-pass' }),
-  });
-
-  expect(loginResponse.status).toBe(200);
-  const cookies = extractCookieHeader(loginResponse);
-
-  const csrfResponse = await app.request('/api/web-auth/csrf', {
-    headers: {
-      cookie: cookies,
-    },
-  });
-
-  expect(csrfResponse.status).toBe(200);
-  const csrfBody = await csrfResponse.json() as { csrfToken: string };
-
+function managementHeaders(token?: string): Record<string, string> {
+  if (!token) {
+    return {};
+  }
   return {
-    cookies,
-    csrfToken: csrfBody.csrfToken,
+    'x-mytermux-web-link-token': token,
   };
 }
 
 describe('Relay API integration', () => {
-  it('should complete login -> csrf -> auto-profile -> patch -> ws-ticket flow', async () => {
+  it('should complete auto-profile -> patch -> ws-ticket flow', async () => {
     const { app, wsTicketService, deviceRegistry } = createTestContext();
     deviceRegistry.registerDevice(
       createMockWs(),
@@ -158,12 +86,7 @@ describe('Relay API integration', () => {
       'mytermux-1234567890abcdef1234567890abcdef',
     );
 
-    const { cookies, csrfToken } = await loginAndGetAuth(app);
-    expect(cookies.includes('mytermux_web_session=')).toBe(true);
-
-    const daemonsResponse = await app.request('/api/daemons', {
-      headers: { cookie: cookies },
-    });
+    const daemonsResponse = await app.request('/api/daemons');
     expect(daemonsResponse.status).toBe(200);
     const daemonsBody = await daemonsResponse.json() as {
       profiles: Array<{ id: string; daemonId?: string | null }>;
@@ -174,8 +97,6 @@ describe('Relay API integration', () => {
     const patchResponse = await app.request(`/api/daemon-profiles/${profile!.id}`, {
       method: 'PATCH',
       headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfToken,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -189,8 +110,6 @@ describe('Relay API integration', () => {
     const wsTicketResponse = await app.request('/api/ws-ticket', {
       method: 'POST',
       headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfToken,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -207,125 +126,10 @@ describe('Relay API integration', () => {
     expect(wsTicketService.consume(wsTicketBody.ticket)).toBeNull();
   });
 
-  it('should reject token-only login payload', async () => {
+  it('should expose daemon apis without web session', async () => {
     const { app } = createTestContext();
-
-    const response = await app.request('/api/web-auth/login', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({ token: 'web-login-token' }),
-    });
-
-    expect(response.status).toBe(400);
-  });
-
-  it('should require changing username/password on first login before accessing protected apis', async () => {
-    const { app } = createTestContext({ mustChangePassword: true });
-    const loginResponse = await app.request('/api/web-auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'secret-pass' }),
-    });
-    expect(loginResponse.status).toBe(200);
-    const loginBody = await loginResponse.json() as {
-      mustChangePassword?: boolean;
-      authenticated?: boolean;
-    };
-    expect(loginBody.authenticated).toBe(true);
-    expect(loginBody.mustChangePassword).toBe(true);
-
-    const cookies = extractCookieHeader(loginResponse);
-    const csrfResponse = await app.request('/api/web-auth/csrf', {
-      headers: { cookie: cookies },
-    });
-    expect(csrfResponse.status).toBe(200);
-    const csrfBody = await csrfResponse.json() as { csrfToken: string };
-
-    const blockedDaemons = await app.request('/api/daemons', {
-      headers: { cookie: cookies },
-    });
-    expect(blockedDaemons.status).toBe(428);
-
-    const updateResponse = await app.request('/api/web-auth/change-credentials', {
-      method: 'POST',
-      headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfBody.csrfToken,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        username: 'root-admin',
-        password: 'new-secret-pass',
-      }),
-    });
-    expect(updateResponse.status).toBe(200);
-    const updateBody = await updateResponse.json() as {
-      mustChangePassword?: boolean;
-      username: string;
-    };
-    expect(updateBody.username).toBe('root-admin');
-    expect(updateBody.mustChangePassword).toBe(false);
-
-    const newCookies = extractCookieHeader(updateResponse);
-    const daemonsResponse = await app.request('/api/daemons', {
-      headers: { cookie: newCookies },
-    });
-    expect(daemonsResponse.status).toBe(200);
-
-    const oldLogin = await app.request('/api/web-auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'secret-pass' }),
-    });
-    expect(oldLogin.status).toBe(401);
-
-    const newLogin = await app.request('/api/web-auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'root-admin', password: 'new-secret-pass' }),
-    });
-    expect(newLogin.status).toBe(200);
-  });
-
-  it('should reject protected api when unauthenticated', async () => {
-    const { app } = createTestContext();
-
     const response = await app.request('/api/daemons');
-    expect(response.status).toBe(401);
-  });
-
-  it('should enforce csrf for write operations', async () => {
-    const { app, deviceRegistry } = createTestContext();
-    deviceRegistry.registerDevice(
-      createMockWs(),
-      'daemon-csrf-check',
-      'daemon',
-      'daemon-public-key-csrf-check',
-      'mytermux-0f0e0d0c0b0a09080706050403020100',
-    );
-
-    const { cookies } = await loginAndGetAuth(app);
-    const daemonsResponse = await app.request('/api/daemons', {
-      headers: { cookie: cookies },
-    });
-    const body = await daemonsResponse.json() as { profiles: Array<{ id: string }> };
-    const profileId = body.profiles[0]?.id;
-    expect(profileId).toBeDefined();
-
-    const patchResponse = await app.request(`/api/daemon-profiles/${profileId}`, {
-      method: 'PATCH',
-      headers: {
-        cookie: cookies,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: 'without-csrf',
-      }),
-    });
-
-    expect(patchResponse.status).toBe(403);
+    expect(response.status).toBe(200);
   });
 
   it('should auto create profile for online daemon in /api/daemons', async () => {
@@ -339,10 +143,7 @@ describe('Relay API integration', () => {
       'mytermux-aabbccddeeff00112233445566778899',
     );
 
-    const { cookies } = await loginAndGetAuth(app);
-    const daemonsResponse = await app.request('/api/daemons', {
-      headers: { cookie: cookies },
-    });
+    const daemonsResponse = await app.request('/api/daemons');
     expect(daemonsResponse.status).toBe(200);
 
     const body = await daemonsResponse.json() as {
@@ -365,173 +166,180 @@ describe('Relay API integration', () => {
       'mytermux-1029384756abcdef0011223344556677',
     );
 
-    const { cookies } = await loginAndGetAuth(app);
-
-    const firstResponse = await app.request('/api/daemons', {
-      headers: { cookie: cookies },
-    });
+    const firstResponse = await app.request('/api/daemons');
     expect(firstResponse.status).toBe(200);
-    let firstBody = await firstResponse.json() as { profiles: Array<{ daemonId?: string | null }> };
-    expect(firstBody.profiles.some((item) => item.daemonId === 'daemon-offline-cleanup')).toBe(true);
+    const firstBody = await firstResponse.json() as { profiles: Array<{ id: string; daemonId?: string | null }> };
+    const profile = firstBody.profiles.find((item) => item.daemonId === 'daemon-offline-cleanup');
+    expect(profile?.id).toBeDefined();
 
-    deviceRegistry.unregisterDevice('daemon-offline-cleanup');
+    const daemon = deviceRegistry.getDevice('daemon-offline-cleanup');
+    expect(daemon).not.toBeNull();
+    if (daemon) {
+      deviceRegistry.unregisterDevice('daemon-offline-cleanup');
+    }
 
-    const secondResponse = await app.request('/api/daemons', {
-      headers: { cookie: cookies },
-    });
+    const secondResponse = await app.request('/api/daemons');
     expect(secondResponse.status).toBe(200);
-    firstBody = await secondResponse.json() as { profiles: Array<{ daemonId?: string | null }> };
-    expect(firstBody.profiles.some((item) => item.daemonId === 'daemon-offline-cleanup')).toBe(true);
-    expect(storage.getDaemonProfileByDaemonId('daemon-offline-cleanup')).not.toBeNull();
+    const secondBody = await secondResponse.json() as { profiles: Array<{ id: string; daemonId?: string | null; online?: boolean }> };
+    const retained = secondBody.profiles.find((item) => item.id === profile!.id);
+    expect(retained?.daemonId).toBe('daemon-offline-cleanup');
+    expect(retained?.online).toBe(false);
+    expect(storage.getDaemonProfile(profile!.id)?.daemonId).toBe('daemon-offline-cleanup');
+
+    const deleteResponse = await app.request(`/api/daemon-profiles/${profile!.id}`, {
+      method: 'DELETE',
+    });
+    expect(deleteResponse.status).toBe(200);
+    expect(storage.getDaemonProfile(profile!.id)).toBeNull();
   });
 
-  it('should disable create/bind APIs and only allow deleting offline profile', async () => {
+  it('should disable create/bind apis and only allow deleting offline profile', async () => {
     const { app, deviceRegistry } = createTestContext();
+
     deviceRegistry.registerDevice(
       createMockWs(),
       'daemon-disabled-api',
       'daemon',
       'daemon-public-key-disabled-api',
-      'mytermux-8899aabbccddeeff0011223344556677',
+      'mytermux-5566778899aabbccddeeff0011223344',
     );
 
-    const { cookies, csrfToken } = await loginAndGetAuth(app);
-    const daemonsResponse = await app.request('/api/daemons', {
-      headers: { cookie: cookies },
-    });
-    const daemonsBody = await daemonsResponse.json() as { profiles: Array<{ id: string }> };
-    const profileId = daemonsBody.profiles[0]?.id;
-    expect(profileId).toBeDefined();
+    const daemonsResponse = await app.request('/api/daemons');
+    expect(daemonsResponse.status).toBe(200);
+    const body = await daemonsResponse.json() as { profiles: Array<{ id: string; daemonId?: string | null }> };
+    const profile = body.profiles.find((item) => item.daemonId === 'daemon-disabled-api');
+    expect(profile?.id).toBeDefined();
 
     const createResponse = await app.request('/api/daemon-profiles', {
       method: 'POST',
-      headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfToken,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: 'should-be-disabled',
-        daemonId: 'daemon-disabled-api',
-        defaultCommandMode: 'zsh',
-      }),
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'manual' }),
     });
     expect(createResponse.status).toBe(405);
 
-    const deleteResponse = await app.request(`/api/daemon-profiles/${profileId}`, {
-      method: 'DELETE',
-      headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfToken,
-      },
-    });
-    expect(deleteResponse.status).toBe(409);
-
-    deviceRegistry.unregisterDevice('daemon-disabled-api');
-
-    const deleteOfflineResponse = await app.request(`/api/daemon-profiles/${profileId}`, {
-      method: 'DELETE',
-      headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfToken,
-      },
-    });
-    expect(deleteOfflineResponse.status).toBe(200);
-
-    const bindResponse = await app.request(`/api/daemon-profiles/${profileId}/bind`, {
+    const bindResponse = await app.request(`/api/daemon-profiles/${profile!.id}/bind`, {
       method: 'POST',
-      headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfToken,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        daemonId: 'daemon-disabled-api',
-      }),
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ daemonId: 'another-daemon' }),
     });
     expect(bindResponse.status).toBe(405);
+
+    const deleteOnlineResponse = await app.request(`/api/daemon-profiles/${profile!.id}`, {
+      method: 'DELETE',
+    });
+    expect(deleteOnlineResponse.status).toBe(409);
+
+    const daemon = deviceRegistry.getDevice('daemon-disabled-api');
+    expect(daemon).not.toBeNull();
+    if (daemon) {
+      deviceRegistry.unregisterDevice('daemon-disabled-api');
+    }
+
+    const deleteOfflineResponse = await app.request(`/api/daemon-profiles/${profile!.id}`, {
+      method: 'DELETE',
+    });
+    expect(deleteOfflineResponse.status).toBe(200);
   });
 
-  it('should reject daemonId updates in patch API', async () => {
-    const { app, storage } = createTestContext();
-    storage.createDaemonProfile('profile-immutable-daemon-id', {
-      name: 'immutable-daemon-id',
-      daemonId: 'daemon-origin',
-      defaultCommandMode: 'zsh',
-    });
+  it('should reject daemonId updates in patch api', async () => {
+    const { app, deviceRegistry } = createTestContext();
+    deviceRegistry.registerDevice(
+      createMockWs(),
+      'daemon-immutable-id',
+      'daemon',
+      'daemon-public-key-immutable-id',
+      'mytermux-99887766554433221100ffeeddccbbaa',
+    );
 
-    const { cookies, csrfToken } = await loginAndGetAuth(app);
-    const response = await app.request('/api/daemon-profiles/profile-immutable-daemon-id', {
+    const daemonsResponse = await app.request('/api/daemons');
+    expect(daemonsResponse.status).toBe(200);
+    const body = await daemonsResponse.json() as { profiles: Array<{ id: string; daemonId?: string | null }> };
+    const profile = body.profiles.find((item) => item.daemonId === 'daemon-immutable-id');
+    expect(profile?.id).toBeDefined();
+
+    const patchResponse = await app.request(`/api/daemon-profiles/${profile!.id}`, {
       method: 'PATCH',
       headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfToken,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        daemonId: 'daemon-new',
+        daemonId: 'tampered-daemon-id',
       }),
     });
 
-    expect(response.status).toBe(400);
+    expect(patchResponse.status).toBe(400);
+    const patchBody = await patchResponse.json() as { error?: string };
+    expect(patchBody.error).toBe('IMMUTABLE_FIELD');
   });
 
-  it('should require MYTERMUX_WEB_LINK_TOKEN for ws-ticket when configured', async () => {
-    const { app, deviceRegistry } = createTestContext({
-      webLinkToken: 'web-link-token',
-    });
+  it('should require MYTERMUX_WEB_LINK_TOKEN for management and ws-ticket when configured', async () => {
+    const webLinkToken = 'web-link-secret-token';
+    const { app, deviceRegistry } = createTestContext({ webLinkToken });
     deviceRegistry.registerDevice(
       createMockWs(),
       'daemon-link-token-check',
       'daemon',
       'daemon-public-key-link-token-check',
-      'mytermux-13579bdf2468ace00112233445566778',
+      'mytermux-11223344556677889900aabbccddeeff',
     );
 
-    const { cookies, csrfToken } = await loginAndGetAuth(app);
-    const daemonsResponse = await app.request('/api/daemons', {
-      headers: { cookie: cookies },
-    });
-    const daemonsBody = await daemonsResponse.json() as {
-      profiles: Array<{ id: string; daemonId?: string | null }>;
-    };
-    const profileId = daemonsBody.profiles.find((item) => item.daemonId === 'daemon-link-token-check')?.id;
-    expect(profileId).toBeDefined();
+    const deniedDaemonsResponse = await app.request('/api/daemons');
+    expect(deniedDaemonsResponse.status).toBe(401);
 
-    const patchTokenResponse = await app.request(`/api/daemon-profiles/${profileId}`, {
+    const daemonsResponse = await app.request('/api/daemons', {
+      headers: managementHeaders(webLinkToken),
+    });
+    expect(daemonsResponse.status).toBe(200);
+    const body = await daemonsResponse.json() as { profiles: Array<{ id: string; daemonId?: string | null }> };
+    const profile = body.profiles.find((item) => item.daemonId === 'daemon-link-token-check');
+    expect(profile?.id).toBeDefined();
+
+    const patchWithoutToken = await app.request(`/api/daemon-profiles/${profile!.id}`, {
       method: 'PATCH',
       headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfToken,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        daemonToken: 'mytermux-13579bdf2468ace00112233445566778',
+        name: 'daemon-link-token-check-updated',
       }),
     });
-    expect(patchTokenResponse.status).toBe(200);
+    expect(patchWithoutToken.status).toBe(401);
 
-    const denied = await app.request('/api/ws-ticket', {
-      method: 'POST',
+    const patchWithToken = await app.request(`/api/daemon-profiles/${profile!.id}`, {
+      method: 'PATCH',
       headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfToken,
+        ...managementHeaders(webLinkToken),
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ profileId }),
+      body: JSON.stringify({
+        name: 'daemon-link-token-check-updated',
+        accessToken: 'mytermux-11223344556677889900aabbccddeeff',
+      }),
     });
-    expect(denied.status).toBe(401);
+    expect(patchWithToken.status).toBe(200);
 
-    const allowed = await app.request('/api/ws-ticket', {
+    const badTokenResponse = await app.request('/api/ws-ticket', {
       method: 'POST',
       headers: {
-        cookie: cookies,
-        'x-csrf-token': csrfToken,
+        ...managementHeaders('wrong-token'),
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ profileId, webLinkToken: 'web-link-token' }),
+      body: JSON.stringify({
+        profileId: profile!.id,
+      }),
     });
-    expect(allowed.status).toBe(200);
+    expect(badTokenResponse.status).toBe(401);
+
+    const wsTicketResponse = await app.request('/api/ws-ticket', {
+      method: 'POST',
+      headers: {
+        ...managementHeaders(webLinkToken),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        profileId: profile!.id,
+      }),
+    });
+    expect(wsTicketResponse.status).toBe(200);
   });
-
 });

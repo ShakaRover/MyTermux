@@ -5,20 +5,23 @@ import type {
   WebPreferences,
   WebShortcut,
 } from '@mytermux/shared';
-import { apiRequest, resetCsrfTokenCache } from './client';
+import { apiRequest } from './client';
+import {
+  getLocalWebSession,
+  loginLocalWebAdmin,
+  logoutLocalWebAdmin,
+  updateLocalWebAdminCredentials,
+} from '../storage/webAuthDatabase';
+import {
+  getLocalWebPreferences,
+  getRelayWebLinkToken,
+  saveLocalWebPreferences,
+} from '../storage/webPreferencesDatabase';
 
 export interface WebAuthSession {
   authenticated: boolean;
   username: string;
   mustChangePassword: boolean;
-  expiresAt: number;
-}
-
-interface LoginWebAuthResponse {
-  authenticated?: boolean;
-  success?: boolean;
-  username: string;
-  mustChangePassword?: boolean;
   expiresAt: number;
 }
 
@@ -43,61 +46,44 @@ export interface DaemonProfilePatchPayload {
   defaultCommandValue?: string | null;
 }
 
-export async function loginWebAdmin(username: string, password: string): Promise<WebAuthSession> {
-  const response = await apiRequest<LoginWebAuthResponse>('/web-auth/login', {
-    method: 'POST',
-    body: {
-      username,
-      password,
-    },
-  });
+async function resolveRelayAuthHeaders(tokenInput?: string | null): Promise<Record<string, string>> {
+  const fromInput = tokenInput?.trim();
+  const fromDb = (await getRelayWebLinkToken())?.trim();
+  const fromEnv = import.meta.env.VITE_MYTERMUX_WEB_LINK_TOKEN?.trim();
+  const token = fromInput || fromDb || fromEnv || '';
 
-  return {
-    authenticated: response.authenticated ?? response.success ?? true,
-    username: response.username,
-    mustChangePassword: response.mustChangePassword ?? false,
-    expiresAt: response.expiresAt,
-  };
+  if (!token) {
+    return {};
+  }
+  return { 'x-mytermux-web-link-token': token };
+}
+
+export async function loginWebAdmin(username: string, password: string): Promise<WebAuthSession> {
+  return loginLocalWebAdmin(username, password);
 }
 
 export async function updateWebAdminCredentials(username: string, password: string): Promise<WebAuthSession> {
-  const response = await apiRequest<LoginWebAuthResponse>('/web-auth/change-credentials', {
-    method: 'POST',
-    requireCsrf: true,
-    body: {
-      username,
-      password,
-    },
-  });
-
-  return {
-    authenticated: response.authenticated ?? response.success ?? true,
-    username: response.username,
-    mustChangePassword: response.mustChangePassword ?? false,
-    expiresAt: response.expiresAt,
-  };
+  return updateLocalWebAdminCredentials(username, password);
 }
 
 export async function logoutWebAdmin(): Promise<void> {
-  await apiRequest('/web-auth/logout', {
-    method: 'POST',
-    requireCsrf: true,
-  });
-  resetCsrfTokenCache();
+  await logoutLocalWebAdmin();
 }
 
 export async function fetchWebSession(): Promise<WebAuthSession> {
-  return apiRequest<WebAuthSession>('/web-auth/me');
+  return getLocalWebSession();
 }
 
 export async function fetchDaemons(): Promise<DaemonListResponse> {
-  return apiRequest<DaemonListResponse>('/daemons');
+  return apiRequest<DaemonListResponse>('/daemons', {
+    headers: await resolveRelayAuthHeaders(),
+  });
 }
 
 export async function patchDaemonProfile(profileId: string, payload: DaemonProfilePatchPayload): Promise<DaemonProfile> {
   const response = await apiRequest<{ profile: DaemonProfile }>(`/daemon-profiles/${profileId}`, {
     method: 'PATCH',
-    requireCsrf: true,
+    headers: await resolveRelayAuthHeaders(),
     body: payload,
   });
   return response.profile;
@@ -106,25 +92,23 @@ export async function patchDaemonProfile(profileId: string, payload: DaemonProfi
 export async function deleteDaemonProfile(profileId: string): Promise<void> {
   await apiRequest(`/daemon-profiles/${profileId}`, {
     method: 'DELETE',
-    requireCsrf: true,
+    headers: await resolveRelayAuthHeaders(),
   });
 }
 
 export async function requestWsTicket(profileId: string, webLinkTokenInput?: string | null): Promise<WsTicketResponse> {
-  const webLinkToken = webLinkTokenInput?.trim() || import.meta.env.VITE_MYTERMUX_WEB_LINK_TOKEN?.trim();
-
   return apiRequest<WsTicketResponse>('/ws-ticket', {
     method: 'POST',
-    requireCsrf: true,
+    headers: await resolveRelayAuthHeaders(webLinkTokenInput),
     body: {
       profileId,
-      ...(webLinkToken ? { webLinkToken } : {}),
+      ...(webLinkTokenInput?.trim() ? { webLinkToken: webLinkTokenInput.trim() } : {}),
     },
   });
 }
 
 export async function fetchWebPreferences(): Promise<WebPreferences> {
-  return apiRequest<WebPreferences>('/web-preferences');
+  return getLocalWebPreferences();
 }
 
 export async function updateWebPreferences(
@@ -133,14 +117,5 @@ export async function updateWebPreferences(
   relayUrl: string | null,
   webLinkToken: string | null,
 ): Promise<WebPreferences> {
-  return apiRequest<WebPreferences>('/web-preferences', {
-    method: 'PUT',
-    requireCsrf: true,
-    body: {
-      shortcuts,
-      commonChars,
-      relayUrl,
-      webLinkToken,
-    },
-  });
+  return saveLocalWebPreferences(shortcuts, commonChars, relayUrl, webLinkToken);
 }

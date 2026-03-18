@@ -25,9 +25,6 @@ import { readAccessToken } from './auth-manager.js';
 /** 配置目录 */
 const CONFIG_DIR = path.join(os.homedir(), '.mytermux');
 
-/** 认证数据文件路径 */
-const AUTH_DATA_FILE = path.join(CONFIG_DIR, 'auth.json');
-
 /** Token 脱敏显示：保留前缀和前后各 4 位随机段 */
 function maskToken(token: string): string {
   const dashIndex = token.indexOf('-');
@@ -191,12 +188,8 @@ program
 
           // 读取并显示 Access Token
           try {
-            const content = await fs.readFile(AUTH_DATA_FILE, 'utf-8');
-            const data = JSON.parse(content) as { daemonToken?: string; accessToken?: string };
-            const daemonToken = data.daemonToken || data.accessToken;
-            if (daemonToken) {
-              console.log(`MYTERMUX_DAEMON_TOKEN: ${maskToken(daemonToken)}`);
-            }
+            const { token } = await readAccessToken();
+            console.log(`MYTERMUX_DAEMON_TOKEN: ${maskToken(token)}`);
           } catch (readErr) {
             // I7: 区分文件不存在（正常情况）和其他错误
             if ((readErr as NodeJS.ErrnoException).code === 'ENOENT') {
