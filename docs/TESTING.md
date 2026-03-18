@@ -38,10 +38,9 @@ pnpm start:local:test
 如需分别启动：
 
 ```bash
-set -a && source .env && set +a
-pnpm --filter @mytermux/relay start:fg -- --host "${RELAY_HOST:-127.0.0.1}" --port "${RELAY_PORT:-62200}"
-pnpm --filter @mytermux/daemon start:fg -- --relay "${RELAY_URL:-ws://127.0.0.1:62200}" --listen-host "${DAEMON_HOST:-127.0.0.1}" --listen-port "${DAEMON_PORT:-62300}"
-pnpm --filter @mytermux/web dev -- --host "${VITE_HOST:-127.0.0.1}" --port "${VITE_PORT:-62100}"
+bash ./scripts/relay/start-fg.sh
+bash ./scripts/daemon/start-fg.sh
+bash ./scripts/web/start-fg.sh
 ```
 
 ### 2.2 Web 登录与管理
