@@ -40,14 +40,14 @@ packages/
 ```bash
 pnpm install
 pnpm turbo run build
+cp .env.example .env
+# 编辑 .env（至少填写 MYTERMUX_WEB_TOKEN / MYTERMUX_WEB_LINK_TOKEN / MYTERMUX_DAEMON_LINK_TOKEN / RELAY_WEB_MASTER_KEY）
 ```
 
 启动：
 
 ```bash
-pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
-pnpm --filter @mytermux/daemon start:fg
-pnpm --filter @mytermux/web dev -- --host 127.0.0.1 --port 62100
+pnpm start:local:test
 ```
 
 默认地址：
@@ -56,6 +56,15 @@ pnpm --filter @mytermux/web dev -- --host 127.0.0.1 --port 62100
 - Relay: `http://127.0.0.1:62200`
 - Relay WebSocket: `ws://127.0.0.1:62200/ws`
 - Daemon 本地状态监听: `http://127.0.0.1:62300`
+
+如需分别启动：
+
+```bash
+set -a && source .env && set +a
+pnpm --filter @mytermux/relay start:fg -- --host "${RELAY_HOST:-127.0.0.1}" --port "${RELAY_PORT:-62200}"
+pnpm --filter @mytermux/daemon start:fg -- --relay "${RELAY_URL:-ws://127.0.0.1:62200}" --listen-host "${DAEMON_HOST:-127.0.0.1}" --listen-port "${DAEMON_PORT:-62300}"
+pnpm --filter @mytermux/web dev -- --host "${VITE_HOST:-127.0.0.1}" --port "${VITE_PORT:-62100}"
+```
 
 ## 5. 协议与类型关键点
 

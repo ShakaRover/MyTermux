@@ -15,6 +15,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "test": "turbo run test",
+    "start:local:test": "bash ./scripts/start-local-test.sh",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "clean": "turbo run clean && rm -rf node_modules"

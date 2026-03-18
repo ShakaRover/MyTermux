@@ -48,48 +48,43 @@ pnpm install
 pnpm turbo run build
 ```
 
-1. 配置鉴权环境变量（推荐 token 模式）
+1. 复制环境变量样本并填写
 
 ```bash
-# Relay 侧
-export MYTERMUX_WEB_TOKEN='your-web-login-token'
-export MYTERMUX_WEB_LINK_TOKEN='your-web-link-token'
-export MYTERMUX_DAEMON_LINK_TOKEN='your-daemon-link-token'
-export RELAY_WEB_MASTER_KEY='your-32-byte-random-secret'
-
-# Web 侧（用于请求 /api/ws-ticket 时携带 web link token）
-export VITE_MYTERMUX_WEB_LINK_TOKEN='your-web-link-token'
+cp .env.example .env
+# 编辑 .env，至少填写:
+# MYTERMUX_WEB_TOKEN
+# MYTERMUX_WEB_LINK_TOKEN
+# MYTERMUX_DAEMON_LINK_TOKEN
+# RELAY_WEB_MASTER_KEY
 ```
 
 兼容模式（不用 `MYTERMUX_WEB_TOKEN`，改用用户名密码）：
 
 ```bash
-export RELAY_ADMIN_USERNAME=admin
-export RELAY_ADMIN_PASSWORD_HASH='<scrypt-hash>'
-export RELAY_WEB_MASTER_KEY='your-32-byte-random-secret'
+# 写入 .env
+RELAY_ADMIN_USERNAME=admin
+RELAY_ADMIN_PASSWORD_HASH='<scrypt-hash>'
 ```
 
-2. 启动 relay
+2. 启动本地测试（会同时启动 relay + daemon + web）
 
 ```bash
-pnpm --filter @mytermux/relay start:fg
+pnpm start:local:test
 ```
 
-3. 启动 daemon（若启用 `MYTERMUX_DAEMON_LINK_TOKEN`，需传入同值）
+如需分别启动：
 
 ```bash
-pnpm --filter @mytermux/daemon start:fg -- --daemon-link-token 'your-daemon-link-token'
+set -a && source .env && set +a
+pnpm --filter @mytermux/relay start:fg -- --host "${RELAY_HOST:-127.0.0.1}" --port "${RELAY_PORT:-62200}"
+pnpm --filter @mytermux/daemon start:fg -- --relay "${RELAY_URL:-ws://127.0.0.1:62200}" --listen-host "${DAEMON_HOST:-127.0.0.1}" --listen-port "${DAEMON_PORT:-62300}"
+pnpm --filter @mytermux/web dev -- --host "${VITE_HOST:-127.0.0.1}" --port "${VITE_PORT:-62100}"
 ```
 
-4. 启动 Web
+3. 打开 `http://127.0.0.1:62100`
 
-```bash
-pnpm --filter @mytermux/web dev
-```
-
-5. 打开 `http://127.0.0.1:62100`
-
-6. 登录 Web 管理中心后：
+4. 登录 Web 管理中心后：
 - 在线 daemon 自动生成 profile，可编辑配置（token、默认目录、默认命令）
 - 离线 profile 会保留，支持手动删除
 - 点击“连接”进入会话页面

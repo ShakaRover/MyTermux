@@ -24,12 +24,20 @@ MyTermux 当前推荐流程：
 ```bash
 pnpm install
 pnpm turbo run build
+cp .env.example .env
 ```
 
-### 3.2 启动 relay
+编辑 `.env`，至少填写：
+
+- `MYTERMUX_WEB_TOKEN`
+- `MYTERMUX_WEB_LINK_TOKEN`
+- `MYTERMUX_DAEMON_LINK_TOKEN`
+- `RELAY_WEB_MASTER_KEY`
+
+### 3.2 一键启动本地测试
 
 ```bash
-pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
+pnpm start:local:test
 ```
 
 默认地址：
@@ -42,10 +50,13 @@ pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
 
 > 推荐优先配置 `MYTERMUX_WEB_TOKEN`；未配置时可回退管理员账号/密码模式。
 
-### 3.3 启动 daemon
+### 3.3 分别启动（可选）
 
 ```bash
-pnpm --filter @mytermux/daemon start:fg -- --daemon-link-token '<daemon-link-token>'
+set -a && source .env && set +a
+pnpm --filter @mytermux/relay start:fg -- --host "${RELAY_HOST:-127.0.0.1}" --port "${RELAY_PORT:-62200}"
+pnpm --filter @mytermux/daemon start:fg -- --relay "${RELAY_URL:-ws://127.0.0.1:62200}" --listen-host "${DAEMON_HOST:-127.0.0.1}" --listen-port "${DAEMON_PORT:-62300}"
+pnpm --filter @mytermux/web dev -- --host "${VITE_HOST:-127.0.0.1}" --port "${VITE_PORT:-62100}"
 ```
 
 Daemon 默认监听：
@@ -56,12 +67,6 @@ Daemon 默认监听：
 
 ```bash
 pnpm --filter @mytermux/daemon token
-```
-
-### 3.4 启动 Web
-
-```bash
-pnpm --filter @mytermux/web dev -- --host 127.0.0.1 --port 62100
 ```
 
 浏览器打开 `http://127.0.0.1:62100`，进入 `/login` 登录。

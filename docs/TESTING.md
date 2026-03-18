@@ -30,9 +30,18 @@ pnpm --filter @mytermux/web test
 ### 2.1 启动组件
 
 ```bash
-pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
-pnpm --filter @mytermux/daemon start:fg
-pnpm --filter @mytermux/web dev -- --host 127.0.0.1 --port 62100
+cp .env.example .env
+# 编辑 .env 后执行
+pnpm start:local:test
+```
+
+如需分别启动：
+
+```bash
+set -a && source .env && set +a
+pnpm --filter @mytermux/relay start:fg -- --host "${RELAY_HOST:-127.0.0.1}" --port "${RELAY_PORT:-62200}"
+pnpm --filter @mytermux/daemon start:fg -- --relay "${RELAY_URL:-ws://127.0.0.1:62200}" --listen-host "${DAEMON_HOST:-127.0.0.1}" --listen-port "${DAEMON_PORT:-62300}"
+pnpm --filter @mytermux/web dev -- --host "${VITE_HOST:-127.0.0.1}" --port "${VITE_PORT:-62100}"
 ```
 
 ### 2.2 Web 登录与管理
