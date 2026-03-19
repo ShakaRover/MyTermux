@@ -6,7 +6,8 @@
  * - mytermux start  启动守护进程
  * - mytermux stop   停止守护进程
  * - mytermux status 查看状态
- * - mytermux token  查看 MYTERMUX_DAEMON_TOKEN
+ * - mytermux token  查看/重置 MYTERMUX_DAEMON_TOKEN
+ * - mytermux relay-token 查看/设置 daemon -> Relay 链路 token
  */
 
 import { Command } from 'commander';
@@ -16,7 +17,13 @@ import * as os from 'os';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { Daemon } from './daemon.js';
-import { readAccessToken } from './auth-manager.js';
+import {
+  readAccessToken,
+  resetAccessToken,
+  readDaemonLinkToken,
+  setDaemonLinkToken,
+  clearDaemonLinkToken,
+} from './auth-manager.js';
 
 // ============================================================================
 // 常量定义
@@ -119,6 +126,25 @@ async function readStatusFile(): Promise<Record<string, unknown> | null> {
   }
 }
 
+/**
+ * 解析 daemon -> Relay 链路 token
+ * 优先级：CLI 参数 > 环境变量 > daemon.db 持久化配置
+ */
+async function resolveDaemonLinkToken(tokenFromCli?: string): Promise<string> {
+  const cliToken = tokenFromCli?.trim();
+  if (cliToken) {
+    return cliToken;
+  }
+
+  const envToken = process.env['MYTERMUX_DAEMON_LINK_TOKEN']?.trim();
+  if (envToken) {
+    return envToken;
+  }
+
+  const saved = await readDaemonLinkToken();
+  return saved?.trim() || '';
+}
+
 // ============================================================================
 // CLI 命令实现
 // ============================================================================
@@ -139,9 +165,9 @@ program
   .option('-r, --relay <url>', '中继服务器地址', process.env['RELAY_URL'] || 'ws://127.0.0.1:62200')
   .option('--listen-host <host>', '本地状态监听地址', process.env['DAEMON_HOST'] || '127.0.0.1')
   .option('--listen-port <port>', '本地状态监听端口', process.env['DAEMON_PORT'] || '62300')
-  .option('--daemon-link-token <token>', 'daemon 连接 Relay 链路 token（默认读取 MYTERMUX_DAEMON_LINK_TOKEN）', process.env['MYTERMUX_DAEMON_LINK_TOKEN'] || '')
+  .option('--daemon-link-token <token>', 'daemon 连接 Relay 链路 token（优先级高于环境变量与 daemon.db）')
   .option('-f, --foreground', '前台运行（不作为守护进程）', false)
-  .action(async (options: { relay: string; foreground: boolean; daemonLinkToken: string; listenHost: string; listenPort: string }) => {
+  .action(async (options: { relay: string; foreground: boolean; daemonLinkToken?: string; listenHost: string; listenPort: string }) => {
     // 检查是否已有进程在运行
     const existingPid = await readPidFile();
     if (existingPid && isProcessRunning(existingPid)) {
@@ -149,12 +175,14 @@ program
       return;
     }
 
+    const daemonLinkToken = await resolveDaemonLinkToken(options.daemonLinkToken);
+
     // 后台模式：fork 子进程并立即退出父进程
     if (!options.foreground) {
       const scriptPath = fileURLToPath(import.meta.url);
       const args = ['start', '-f', '-r', options.relay];
-      if (options.daemonLinkToken.trim()) {
-        args.push('--daemon-link-token', options.daemonLinkToken.trim());
+      if (daemonLinkToken) {
+        args.push('--daemon-link-token', daemonLinkToken);
       }
       args.push('--listen-host', options.listenHost.trim() || '127.0.0.1');
       args.push('--listen-port', options.listenPort.trim() || '62300');
@@ -218,7 +246,6 @@ program
     const listenPort = Number.isFinite(parsedListenPort) ? parsedListenPort : 62300;
     console.log(`本地状态监听地址: http://${listenHost}:${listenPort}`);
 
-    const daemonLinkToken = options.daemonLinkToken.trim();
     const daemon = new Daemon({
       relayUrl: options.relay,
       listenHost,
@@ -366,18 +393,31 @@ program
 program
   .command('token')
   .description('查看 MYTERMUX_DAEMON_TOKEN')
-  .action(async () => {
+  .option('--reset', '重置 token（会清空已认证客户端）', false)
+  .action(async (options: { reset?: boolean }) => {
     try {
-      // I12: 复用 auth-manager.ts 的 readAccessToken，消除重复迁移逻辑
-      const { token, migrated } = await readAccessToken();
+      const pid = await readPidFile();
+      const running = !!pid && isProcessRunning(pid);
+
+      if (options.reset && running) {
+        console.error(`重置失败: 守护进程正在运行 (PID: ${pid})，请先执行 mytermux stop`);
+        process.exit(1);
+      }
+
+      const result = options.reset
+        ? await resetAccessToken()
+        : await readAccessToken();
+      const { token, migrated } = result;
       console.log(`MYTERMUX_DAEMON_TOKEN: ${token}`);
+      if (options.reset) {
+        console.log('已重置 token，并清空已认证客户端');
+      }
       if (migrated) {
         console.log('(已自动升级旧版配置文件)');
       }
 
       // 检查 daemon 是否在运行
-      const pid = await readPidFile();
-      if (!pid || !isProcessRunning(pid)) {
+      if (!running) {
         console.log('\n注意: 守护进程未在运行，请先执行 mytermux start');
       }
     } catch (error) {
@@ -387,6 +427,51 @@ program
       } else {
         console.error('读取配置文件失败:', error instanceof Error ? error.message : error);
       }
+    }
+  });
+
+/**
+ * relay-token 命令 - 查看/设置 daemon -> Relay 链路 token
+ */
+program
+  .command('relay-token')
+  .description('查看/设置 MYTERMUX_DAEMON_LINK_TOKEN（daemon -> Relay 链路 token）')
+  .option('-s, --set <token>', '设置新的 relay token')
+  .option('--clear', '清空已保存 relay token', false)
+  .action(async (options: { set?: string; clear?: boolean }) => {
+    try {
+      const nextToken = options.set?.trim() || '';
+      const shouldClear = !!options.clear;
+
+      if (nextToken && shouldClear) {
+        console.error('参数冲突: --set 与 --clear 不能同时使用');
+        process.exit(1);
+      }
+
+      if (nextToken) {
+        await setDaemonLinkToken(nextToken);
+        console.log('MYTERMUX_DAEMON_LINK_TOKEN 已保存到 daemon.db');
+        console.log('注意: 若 daemon 正在运行，新配置将在下次启动时生效');
+        return;
+      }
+
+      if (shouldClear) {
+        await clearDaemonLinkToken();
+        console.log('MYTERMUX_DAEMON_LINK_TOKEN 已清空');
+        console.log('注意: 若 daemon 正在运行，新配置将在下次启动时生效');
+        return;
+      }
+
+      const token = await readDaemonLinkToken();
+      if (!token) {
+        console.log('MYTERMUX_DAEMON_LINK_TOKEN: (未设置)');
+        return;
+      }
+
+      console.log(`MYTERMUX_DAEMON_LINK_TOKEN: ${token}`);
+    } catch (error) {
+      console.error('relay-token 操作失败:', error instanceof Error ? error.message : error);
+      process.exit(1);
     }
   });
 

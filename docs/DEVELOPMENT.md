@@ -71,6 +71,13 @@ pnpm turbo run typecheck
 pnpm turbo run test
 pnpm turbo run build
 pnpm turbo run clean
+
+# daemon token / relay-token
+pnpm --filter @mytermux/daemon token
+pnpm --filter @mytermux/daemon token -- --reset
+pnpm --filter @mytermux/daemon relay-token
+pnpm --filter @mytermux/daemon relay-token -- --set '<daemon-link-token>'
+pnpm --filter @mytermux/daemon relay-token -- --clear
 ```
 
 ## 8. 调试建议
@@ -83,4 +90,5 @@ pnpm turbo run clean
   - 优先检查 `MYTERMUX_WEB_LINK_TOKEN` 与 `x-mytermux-web-link-token` 是否一致
 - Daemon token 问题：
   - 检查 `~/.mytermux/daemon.db`
-  - 必要时重新执行 daemon 启动触发迁移/重建
+  - 必要时执行 `mytermux token --reset` 重置 token（需先停止 daemon）
+  - 如 Relay 开启链路鉴权，执行 `mytermux relay-token --set '<daemon-link-token>'`

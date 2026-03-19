@@ -71,6 +71,19 @@ Daemon 默认监听：
 pnpm --filter @mytermux/daemon token
 ```
 
+重置 `MYTERMUX_DAEMON_TOKEN`（会清空已认证客户端，需先停止 daemon）：
+
+```bash
+pnpm --filter @mytermux/daemon token -- --reset
+```
+
+设置 daemon -> Relay 链路 token（写入 `daemon.db`，下次启动生效）：
+
+```bash
+pnpm --filter @mytermux/daemon relay-token -- --set '<daemon-link-token>'
+pnpm --filter @mytermux/daemon relay-token -- --clear
+```
+
 浏览器打开 `http://127.0.0.1:62100`，进入 `/login` 登录。
 
 ## 4. Daemon 管理中心
@@ -107,11 +120,21 @@ pnpm --filter @mytermux/daemon start
 pnpm --filter @mytermux/daemon stop
 pnpm --filter @mytermux/daemon status
 pnpm --filter @mytermux/daemon token
+pnpm --filter @mytermux/daemon token -- --reset
+pnpm --filter @mytermux/daemon relay-token
+pnpm --filter @mytermux/daemon relay-token -- --set '<daemon-link-token>'
+pnpm --filter @mytermux/daemon relay-token -- --clear
 
 # relay
 pnpm --filter @mytermux/relay start
 pnpm --filter @mytermux/relay stop
 pnpm --filter @mytermux/relay status
+
+# 脚本方式
+pnpm daemon:token:get
+pnpm daemon:token:reset
+pnpm daemon:relay-token:set -- '<daemon-link-token>'
+bash ./scripts/daemon/set-relay-token.sh --clear
 ```
 
 ## 7. 本地数据目录

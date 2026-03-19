@@ -58,6 +58,8 @@ const CONFIG_DIR = path.join(os.homedir(), '.mytermux');
 const DAEMON_DB_FILE = path.join(CONFIG_DIR, 'daemon.db');
 /** 旧版认证数据文件（仅迁移读取） */
 const LEGACY_AUTH_DATA_FILE = path.join(CONFIG_DIR, 'auth.json');
+/** daemon 设置项：relay 链路 token */
+const DAEMON_LINK_TOKEN_KEY = 'daemon_link_token';
 
 function createErrno(code: string, message: string): NodeJS.ErrnoException {
   const error = new Error(message) as NodeJS.ErrnoException;
@@ -118,6 +120,12 @@ function ensureSchema(db: DatabaseSync): void {
       public_key TEXT NOT NULL,
       authenticated_at INTEGER NOT NULL,
       name TEXT,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS daemon_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
   `);
@@ -243,6 +251,117 @@ export async function readAccessToken(): Promise<{ token: string; migrated: bool
     }
 
     return { token: row.daemon_token, migrated };
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * 重置 Access Token（会清空已认证客户端）
+ *
+ * @returns { token, migrated } token 为重置后的 Access Token，migrated 表示是否进行了旧版数据迁移
+ * @throws 数据不存在时抛出 ENOENT 错误
+ */
+export async function resetAccessToken(): Promise<{ token: string; migrated: boolean }> {
+  const db = openDaemonDb();
+  try {
+    let migrated = false;
+    let row = db.prepare(`
+      SELECT id
+      FROM daemon_auth
+      WHERE id = 1
+      LIMIT 1
+    `).get() as { id: number } | undefined;
+
+    if (!row) {
+      migrated = await migrateLegacyAuthJsonIfNeeded(db);
+      row = db.prepare(`
+        SELECT id
+        FROM daemon_auth
+        WHERE id = 1
+        LIMIT 1
+      `).get() as { id: number } | undefined;
+    }
+
+    if (!row) {
+      throw createErrno('ENOENT', '认证数据不存在，请先启动 daemon');
+    }
+
+    const token = generateAccessToken();
+    const now = Date.now();
+
+    db.exec('BEGIN');
+    try {
+      db.prepare(`
+        UPDATE daemon_auth
+        SET daemon_token = ?, updated_at = ?
+        WHERE id = 1
+      `).run(token, now);
+      db.prepare('DELETE FROM authenticated_clients').run();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+
+    return { token, migrated };
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * 读取 daemon -> Relay 链路 token（MYTERMUX_DAEMON_LINK_TOKEN）
+ */
+export async function readDaemonLinkToken(): Promise<string | null> {
+  const db = openDaemonDb();
+  try {
+    const row = db.prepare(`
+      SELECT value
+      FROM daemon_settings
+      WHERE key = ?
+      LIMIT 1
+    `).get(DAEMON_LINK_TOKEN_KEY) as { value: string } | undefined;
+    if (!row?.value) {
+      return null;
+    }
+    const token = row.value.trim();
+    return token ? token : null;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * 写入 daemon -> Relay 链路 token（MYTERMUX_DAEMON_LINK_TOKEN）
+ */
+export async function setDaemonLinkToken(token: string): Promise<void> {
+  const normalized = token.trim();
+  if (!normalized) {
+    throw new Error('token 不能为空');
+  }
+
+  const db = openDaemonDb();
+  try {
+    db.prepare(`
+      INSERT INTO daemon_settings (key, value, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
+    `).run(DAEMON_LINK_TOKEN_KEY, normalized, Date.now());
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * 清空 daemon -> Relay 链路 token
+ */
+export async function clearDaemonLinkToken(): Promise<void> {
+  const db = openDaemonDb();
+  try {
+    db.prepare('DELETE FROM daemon_settings WHERE key = ?').run(DAEMON_LINK_TOKEN_KEY);
   } finally {
     db.close();
   }

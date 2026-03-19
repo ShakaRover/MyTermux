@@ -67,13 +67,21 @@ curl http://127.0.0.1:62200/health
 在被控主机运行：
 
 ```bash
+# 方式 1：启动时直接传入
 pnpm --filter @mytermux/daemon start -- --relay ws://<relay-host>:62200 --daemon-link-token '<daemon-link-token>'
+
+# 方式 2：先持久化到 daemon.db（后续 start 可不再传 --daemon-link-token）
+pnpm --filter @mytermux/daemon relay-token -- --set '<daemon-link-token>'
+pnpm --filter @mytermux/daemon start -- --relay ws://<relay-host>:62200
 ```
 
 查看 `MYTERMUX_DAEMON_TOKEN`：
 
 ```bash
 pnpm --filter @mytermux/daemon token
+
+# 重置（会清空已认证客户端，需先 stop）
+pnpm --filter @mytermux/daemon token -- --reset
 ```
 
 Daemon 默认本地监听：`http://127.0.0.1:62300`

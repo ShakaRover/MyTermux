@@ -80,6 +80,22 @@ bash ./scripts/web/start-bg.sh
 bash ./scripts/web/stop.sh
 ```
 
+Daemon token 管理脚本：
+
+```bash
+# 获取完整 MYTERMUX_DAEMON_TOKEN
+bash ./scripts/daemon/get-token.sh
+
+# 重置 MYTERMUX_DAEMON_TOKEN（会清空已认证客户端）
+bash ./scripts/daemon/reset-token.sh
+
+# 设置 daemon -> Relay 链路 token（持久化到 daemon.db）
+bash ./scripts/daemon/set-relay-token.sh <token>
+
+# 清空已保存链路 token
+bash ./scripts/daemon/set-relay-token.sh --clear
+```
+
 浏览器打开 `http://127.0.0.1:62100`：
 
 1. 用默认账号 `admin` / `mytermux` 登录
@@ -94,6 +110,11 @@ pnpm turbo run build
 pnpm turbo run typecheck
 pnpm turbo run test
 pnpm turbo run clean
+
+# daemon token 管理快捷命令
+pnpm daemon:token:get
+pnpm daemon:token:reset
+pnpm daemon:relay-token:set -- <token>
 ```
 
 ## 运行时文件
