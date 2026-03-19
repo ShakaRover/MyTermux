@@ -4,9 +4,9 @@
 
 MyTermux 当前推荐流程：
 
-1. 启动 server（控制端 API 与中继）
+1. 启动 server（内置 Web 管理界面 + 控制端 API + 中继）
 2. 启动 daemon（提供 `MYTERMUX_DAEMON_TOKEN`）
-3. 浏览器登录 Web 管理中心（服务端 `web.db` 登录）
+3. 浏览器访问 server 并登录 Web 管理中心（服务端 `web.db` 登录）
 4. 在 Web 中编辑 daemon profile 配置
 5. 连接 daemon 并进入终端会话
 
@@ -41,8 +41,7 @@ pnpm start:local:test
 
 默认地址：
 
-- Web Client: `http://127.0.0.1:62100`
-- Server HTTP: `http://127.0.0.1:62200`
+- Web + Server HTTP: `http://127.0.0.1:62200`
 - Server WebSocket: `ws://127.0.0.1:62200/ws`
 
 说明：本地运行不需要证书，不要配置 `TLS_CERT` / `TLS_KEY`。
@@ -62,7 +61,6 @@ bash ./scripts/server/start-fg.sh
 
 # 其他服务
 bash ./scripts/daemon/start-fg.sh
-bash ./scripts/web/start-fg.sh
 ```
 
 Daemon 默认监听：
@@ -88,7 +86,7 @@ pnpm --filter @mytermux/daemon server-token -- --set '<daemon-link-token>'
 pnpm --filter @mytermux/daemon server-token -- --clear
 ```
 
-浏览器打开 `http://127.0.0.1:62100`，进入 `/login` 登录。
+浏览器打开 `http://127.0.0.1:62200`，进入 `/login` 登录。
 
 ## 4. Daemon 管理中心
 

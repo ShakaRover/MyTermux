@@ -4,8 +4,7 @@
 
 MyTermux 当前职责边界：
 
-- Web：管理 UI（调用服务端 WebAuth API 登录）
-- Server（实现包：relay）：中继、profile 管理 API、WebAuth API
+- Server（实现包：`packages/server`）：内置托管 Web UI、中继、profile 管理 API、WebAuth API
 - Daemon：终端会话执行与 daemon token 管理
 
 ## 2. 数据边界（必须遵守）
@@ -35,9 +34,9 @@ MyTermux 当前职责边界：
 ```text
 packages/
   shared/   协议与类型（SessionInfo.pid / startupCommand 等）
-  relay/    API + WS + SQLite（daemon_profiles）
+  server/   API + WS + SQLite（daemon_profiles）+ Web 静态托管
   daemon/   终端会话与 daemon.db 持久化
-  web/      /login /daemons /sessions 页面与本地数据库状态管理
+  web/      前端源码（构建产物由 server 托管）
 ```
 
 ## 6. 本地开发
@@ -60,8 +59,7 @@ pnpm start:local:test
 
 默认地址：
 
-- Web Client: `http://127.0.0.1:62100`
-- Server: `http://127.0.0.1:62200`
+- Web + Server: `http://127.0.0.1:62200`
 - Server WebSocket: `ws://127.0.0.1:62200/ws`
 - Daemon 本地状态监听: `http://127.0.0.1:62300`
 

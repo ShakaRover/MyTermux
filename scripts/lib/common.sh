@@ -82,6 +82,13 @@ mytermux_ensure_server_dist() {
   fi
 }
 
+mytermux_ensure_web_dist() {
+  if [[ ! -f "${MYTERMUX_ROOT_DIR}/packages/web/dist/index.html" ]]; then
+    echo "[web] 未检测到 dist，先执行构建"
+    (cd "$MYTERMUX_ROOT_DIR" && pnpm --filter @mytermux/web build)
+  fi
+}
+
 mytermux_ensure_daemon_dist() {
   if [[ ! -f "${MYTERMUX_ROOT_DIR}/packages/daemon/dist/index.js" ]]; then
     echo "[daemon] 未检测到 dist，先执行构建"

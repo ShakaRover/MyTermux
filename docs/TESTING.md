@@ -20,7 +20,7 @@ pnpm --filter @mytermux/web test
 当前覆盖重点：
 
 - `shared`: 协议/加密
-- `relay`（server 实现包）: registry、websocket-handler、ws-ticket、profile API
+- `server`: registry、websocket-handler、ws-ticket、profile API、静态托管
 - `daemon`: `TerminalSession` 的 `pid/startupCommand`
 - `web`: 登录状态、会话状态、连接 URL
 
@@ -37,7 +37,7 @@ pnpm start:local:test
 
 ### 2.2 Web 登录与管理
 
-1. 打开 `http://127.0.0.1:62100/login`
+1. 打开 `http://127.0.0.1:62200/login`
 2. 使用默认账号密码 `admin` / `mytermux` 登录
 3. 首次登录必须进入账号初始化页并修改账号和密码
 4. 关闭浏览器后重新打开，使用新账号密码应仍可登录（验证 `web.db` 持久化）

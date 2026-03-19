@@ -8,6 +8,7 @@ source "${SCRIPT_DIR}/../lib/common.sh"
 mytermux_load_env
 mytermux_force_local_no_tls
 mytermux_ensure_server_dist
+mytermux_ensure_web_dist
 
 SERVER_HOST="${SERVER_HOST:-127.0.0.1}"
 SERVER_PORT="${SERVER_PORT:-62200}"

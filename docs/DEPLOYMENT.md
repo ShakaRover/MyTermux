@@ -1,6 +1,6 @@
 # MyTermux 部署文档
 
-目标：部署可长期运行的 MyTermux（Server + Daemon + Web）。
+目标：部署可长期运行的 MyTermux（Server + Daemon，Web 由 Server 内置托管）。
 
 ## 0. 运行模型（强制约束）
 
@@ -37,8 +37,9 @@ pnpm turbo run build
 
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Server 前置 token（推荐开启）
 - `SERVER_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
-- `SERVER_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/server.db`）
+- `SERVER_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/relay.db`）
 - `WEB_DB_PATH`：Web 认证数据库路径（默认 `~/.mytermux/web.db`）
+- `SERVER_WEB_DIST_DIR`：可选，指定 Web 静态产物目录（默认自动探测 `packages/web/dist`）
 - `WEB_ADMIN_USERNAME` / `WEB_ADMIN_PASSWORD`：首次初始化管理员账号（仅 `web.db` 首次创建时生效）
 
 示例：
@@ -46,8 +47,9 @@ pnpm turbo run build
 ```bash
 export MYTERMUX_DAEMON_LINK_TOKEN='<daemon-link-token>'
 export SERVER_MASTER_KEY='<32-byte-random-secret>'
-export SERVER_DB_PATH=/var/lib/mytermux/server.db
+export SERVER_DB_PATH=/var/lib/mytermux/relay.db
 export WEB_DB_PATH=/var/lib/mytermux/web.db
+export SERVER_WEB_DIST_DIR=/srv/mytermux/packages/web/dist
 export WEB_ADMIN_USERNAME='admin'
 export WEB_ADMIN_PASSWORD='mytermux'
 ```
@@ -71,6 +73,7 @@ mytermux-server start -f --host 127.0.0.1 --port 62200
 
 ```bash
 curl http://127.0.0.1:62200/health
+curl http://127.0.0.1:62200/
 ```
 
 ## 5. Daemon 部署
@@ -97,15 +100,7 @@ pnpm --filter @mytermux/daemon token -- --reset
 
 Daemon 默认本地监听：`http://127.0.0.1:62300`
 
-## 6. Web 部署
-
-```bash
-pnpm --filter @mytermux/web build
-```
-
-产物目录：`packages/web/dist`
-
-## 7. Nginx 示例（生产必选）
+## 6. Nginx 示例（生产必选）
 
 ```nginx
 server {
@@ -116,12 +111,7 @@ server {
   ssl_certificate_key /etc/letsencrypt/live/mytermux.example.com/privkey.pem;
 
   location / {
-    root /srv/mytermux/web-dist;
-    try_files $uri /index.html;
-  }
-
-  location /api {
-    proxy_pass http://127.0.0.1:62200/api;
+    proxy_pass http://127.0.0.1:62200;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -142,9 +132,9 @@ server {
 }
 ```
 
-## 8. systemd 示例
+## 7. systemd 示例
 
-### 8.1 server.service
+### 7.1 server.service
 
 ```ini
 [Unit]
@@ -161,8 +151,9 @@ User=mytermux
 Environment=NODE_ENV=production
 Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
 Environment=SERVER_MASTER_KEY=<master-key>
-Environment=SERVER_DB_PATH=/var/lib/mytermux/server.db
+Environment=SERVER_DB_PATH=/var/lib/mytermux/relay.db
 Environment=WEB_DB_PATH=/var/lib/mytermux/web.db
+Environment=SERVER_WEB_DIST_DIR=/srv/mytermux/packages/web/dist
 Environment=WEB_ADMIN_USERNAME=<web-admin-username>
 Environment=WEB_ADMIN_PASSWORD=<web-admin-password>
 
@@ -170,7 +161,7 @@ Environment=WEB_ADMIN_PASSWORD=<web-admin-password>
 WantedBy=multi-user.target
 ```
 
-### 8.2 daemon.service
+### 7.2 daemon.service
 
 ```ini
 [Unit]
@@ -191,7 +182,7 @@ Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
 WantedBy=multi-user.target
 ```
 
-## 9. 安全建议
+## 8. 安全建议
 
 - 本地开发/测试不要配置证书，统一走 HTTP/WS
 - 生产必须由 Nginx 提供 TLS，外部流量统一走 HTTPS/WSS
@@ -200,6 +191,6 @@ WantedBy=multi-user.target
 - `MYTERMUX_DAEMON_LINK_TOKEN` 仅通过可信渠道分发
 - `MYTERMUX_DAEMON_TOKEN` 仅通过可信渠道分发，并定期轮换
 
-## 10. 历史数据说明
+## 9. 历史数据说明
 
 本版本不会自动迁移或删除历史版本目录（daemon 的 `auth.json -> daemon.db` 除外）。

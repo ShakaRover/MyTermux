@@ -5,7 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 cleanup() {
-  bash "${ROOT_DIR}/scripts/web/stop.sh" || true
   bash "${ROOT_DIR}/scripts/daemon/stop.sh" || true
   bash "${ROOT_DIR}/scripts/server/stop.sh" || true
 }
@@ -25,5 +24,5 @@ if ! mytermux_wait_http_ready "http://${SERVER_HOST}:${SERVER_PORT}/health" 30; 
   exit 1
 fi
 
-bash "${ROOT_DIR}/scripts/daemon/start-bg.sh"
-bash "${ROOT_DIR}/scripts/web/start-fg.sh"
+echo "[local] Server 已就绪，启动 Daemon（前台）..."
+bash "${ROOT_DIR}/scripts/daemon/start-fg.sh"

@@ -79,7 +79,7 @@ MyTermux 协议分为两层：
 - 清除服务端会话与 Cookie
 - 返回 `204`
 
-## 2. Server HTTP API（实现包：relay）
+## 2. Server HTTP API（实现包：server）
 
 以下管理 API 需要先完成 Web 登录，并携带有效 Cookie 会话。
 
@@ -183,8 +183,8 @@ MyTermux 协议分为两层：
 
 默认端口：
 
-- Web Client：`127.0.0.1:62100`
-- Server：`127.0.0.1:62200`
+- Web + Server HTTP：`127.0.0.1:62200`
+- Server WebSocket：`127.0.0.1:62200/ws`
 - Daemon 本地状态监听：`127.0.0.1:62300`
 
 ### 3.1 通用结构

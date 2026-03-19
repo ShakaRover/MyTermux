@@ -8,6 +8,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
@@ -27,6 +29,8 @@ export interface ServerOptions {
   wsTicketService?: WsTicketService;
   /** Web 登录认证存储 */
   webAuthStorage?: WebAuthStorage;
+  /** Web 前端静态产物目录（包含 index.html） */
+  webDistDir?: string;
 }
 
 /** 允许的默认命令模式 */
@@ -39,6 +43,7 @@ const WEB_SESSION_COOKIE_NAME = 'mytermux_web_session';
 export function createServer(options: ServerOptions = {}) {
   const app = new Hono();
   const requireManagementAccess = createRequireManagementAccessMiddleware(options.webAuthStorage);
+  const webDistDir = normalizeWebDistDir(options.webDistDir);
 
   app.use('*', cors());
 
@@ -294,25 +299,20 @@ export function createServer(options: ServerOptions = {}) {
   });
 
   // API 文档/信息
-  app.get('/', (c) => {
-    return c.json({
-      name: 'MyTermux Server',
-      version: '1.0.0',
-      endpoints: {
-        '/health': 'GET - 健康检查',
-        '/ws': 'WebSocket - 设备连接端点',
-        '/api/ws-ticket': 'POST - 签发一次性 ws ticket',
-        '/api/web-auth/session': 'GET - Web 登录会话',
-        '/api/web-auth/login': 'POST - Web 账号登录',
-        '/api/web-auth/update-credentials': 'POST - Web 修改账号密码',
-        '/api/web-auth/logout': 'POST - Web 登出',
-        '/api/daemons': 'GET - 在线 daemon 与 profile 聚合视图',
-        '/api/daemon-profiles': 'POST - 已禁用（profile 自动创建）',
-        '/api/daemon-profiles/:id': 'PATCH/DELETE - 更新或删除（仅离线可删除）',
-        '/api/daemon-profiles/:id/bind': 'POST - 已禁用（不支持手动绑定）',
-      },
+  app.get('/api/info', (c) => c.json(buildServerInfo()));
+
+  if (!webDistDir) {
+    app.get('/', (c) => c.json(buildServerInfo()));
+  } else {
+    app.get('*', async (c) => {
+      const pathname = c.req.path;
+      if (isReservedPath(pathname)) {
+        return c.notFound();
+      }
+      const response = await tryServeWebAsset(webDistDir, pathname);
+      return response ?? c.notFound();
     });
-  });
+  }
 
   return app;
 }
@@ -337,6 +337,156 @@ async function parseJson<T>(c: Context): Promise<T | null> {
     return await c.req.json<T>();
   } catch {
     return null;
+  }
+}
+
+function buildServerInfo() {
+  return {
+    name: 'MyTermux Server',
+    version: '1.0.0',
+    endpoints: {
+      '/': 'GET - Web 管理界面（静态托管）',
+      '/health': 'GET - 健康检查',
+      '/ws': 'WebSocket - 设备连接端点',
+      '/api/info': 'GET - API 信息',
+      '/api/ws-ticket': 'POST - 签发一次性 ws ticket',
+      '/api/web-auth/session': 'GET - Web 登录会话',
+      '/api/web-auth/login': 'POST - Web 账号登录',
+      '/api/web-auth/update-credentials': 'POST - Web 修改账号密码',
+      '/api/web-auth/logout': 'POST - Web 登出',
+      '/api/daemons': 'GET - 在线 daemon 与 profile 聚合视图',
+      '/api/daemon-profiles': 'POST - 已禁用（profile 自动创建）',
+      '/api/daemon-profiles/:id': 'PATCH/DELETE - 更新或删除（仅离线可删除）',
+      '/api/daemon-profiles/:id/bind': 'POST - 已禁用（不支持手动绑定）',
+    },
+  };
+}
+
+function normalizeWebDistDir(input: string | undefined): string | null {
+  if (!input || !input.trim()) {
+    return null;
+  }
+  return path.resolve(input);
+}
+
+function isReservedPath(pathname: string): boolean {
+  return pathname === '/health' || pathname === '/ws' || pathname === '/api' || pathname.startsWith('/api/');
+}
+
+async function tryServeWebAsset(webDistDir: string, requestPath: string): Promise<Response | null> {
+  const normalizedPath = normalizeRequestPath(requestPath);
+  if (!normalizedPath) {
+    return null;
+  }
+
+  const absoluteAssetPath = path.resolve(webDistDir, normalizedPath);
+  if (!isSubPath(webDistDir, absoluteAssetPath)) {
+    return null;
+  }
+
+  const directFile = await readFileIfExists(absoluteAssetPath);
+  if (directFile) {
+    return new Response(directFile, {
+      headers: {
+        'content-type': getContentTypeByExt(path.extname(absoluteAssetPath)),
+      },
+    });
+  }
+
+  if (path.posix.extname(normalizedPath)) {
+    return null;
+  }
+
+  const indexPath = path.resolve(webDistDir, 'index.html');
+  const indexFile = await readFileIfExists(indexPath);
+  if (!indexFile) {
+    return null;
+  }
+
+  return new Response(indexFile, {
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+    },
+  });
+}
+
+function normalizeRequestPath(requestPath: string): string | null {
+  let pathname = requestPath;
+  try {
+    pathname = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+
+  if (pathname === '/' || pathname === '') {
+    return 'index.html';
+  }
+
+  const withoutLeadingSlash = pathname.replace(/^\/+/, '');
+  const normalizedPath = path.posix.normalize(withoutLeadingSlash);
+  if (!normalizedPath || normalizedPath === '.' || normalizedPath.startsWith('../') || normalizedPath === '..') {
+    return null;
+  }
+
+  return normalizedPath;
+}
+
+function isSubPath(rootPath: string, targetPath: string): boolean {
+  const relative = path.relative(rootPath, targetPath);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+async function readFileIfExists(filePath: string): Promise<Buffer | null> {
+  try {
+    return await fs.readFile(filePath);
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error) {
+      const code = (error as { code?: unknown }).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') {
+        return null;
+      }
+    }
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('读取静态文件失败');
+  }
+}
+
+function getContentTypeByExt(ext: string): string {
+  switch (ext.toLowerCase()) {
+    case '.html':
+      return 'text/html; charset=utf-8';
+    case '.js':
+    case '.mjs':
+      return 'text/javascript; charset=utf-8';
+    case '.css':
+      return 'text/css; charset=utf-8';
+    case '.json':
+      return 'application/json; charset=utf-8';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.gif':
+      return 'image/gif';
+    case '.ico':
+      return 'image/x-icon';
+    case '.woff':
+      return 'font/woff';
+    case '.woff2':
+      return 'font/woff2';
+    case '.ttf':
+      return 'font/ttf';
+    case '.map':
+      return 'application/json; charset=utf-8';
+    case '.txt':
+      return 'text/plain; charset=utf-8';
+    default:
+      return 'application/octet-stream';
   }
 }
 
