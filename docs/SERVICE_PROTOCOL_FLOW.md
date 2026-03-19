@@ -12,10 +12,13 @@ flowchart LR
   WB[(Web 本地数据库<br/>IndexedDB: mytermux_web_db)]
   R[Relay]
   RB[(relay.db)]
+  WA[(web.db)]
   D[Daemon]
   DB[(daemon.db)]
 
-  W <-->|本地登录/偏好| WB
+  W <-->|本地偏好| WB
+  W -->|/api/web-auth/*| R
+  R <-->|账号/会话| WA
   W -->|管理 API + x-mytermux-web-link-token| R
   R <-->|profile 读写| RB
   D -->|register + daemonLinkToken| R
@@ -29,20 +32,20 @@ flowchart LR
   D -->|message / heartbeat| R
 ```
 
-## 2. Web 本地登录 + Relay 管理 API
+## 2. Web 登录 + Relay 管理 API
 
 ```mermaid
 sequenceDiagram
   participant W as Web 前端
-  participant WB as Web 本地数据库
+  participant WA as web.db
   participant R as Relay
   participant RB as relay.db
 
-  W->>WB: 读取账号(默认 admin/mytermux)
-  W->>WB: 登录校验(首次登录强制改密)
-  WB-->>W: 登录成功
+  W->>R: POST /api/web-auth/login
+  R->>WA: 校验账号与密码哈希
+  WA-->>R: 登录通过
+  R-->>W: Set-Cookie + 会话信息
 
-  W->>WB: 读取 relayUrl/webLinkToken
   W->>R: GET /api/daemons + x-mytermux-web-link-token
   R->>RB: 同步在线 daemon 与 profile
   RB-->>R: profiles
@@ -94,7 +97,7 @@ sequenceDiagram
 
 ## 4. 关键约束（排障优先看）
 
-- Web 登录不依赖 Relay，不请求 `/api/web-auth/*`。
+- Web 登录通过 `/api/web-auth/*`，账号与会话写入 `web.db`（不写浏览器本地账号）。
 - 当 Relay 开启 `MYTERMUX_WEB_LINK_TOKEN` 时，管理 API 与 ws-ticket 都需要提供正确 token。
 - Client 连接 `/ws` 前必须先拿 `ws-ticket`，ticket 仅可消费一次，默认 60 秒过期。
 - `token_auth` 仅允许 `deviceType=client`。

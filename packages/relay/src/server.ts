@@ -10,10 +10,12 @@
 import { randomUUID } from 'node:crypto';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { DefaultCommandMode } from '@mytermux/shared';
 import type { DeviceRegistry } from './device-registry.js';
 import type { RelayStorage, DaemonProfilePatch } from './storage/index.js';
 import type { WsTicketService } from './auth/ws-ticket.js';
+import { WebAuthError, type WebAuthStorage } from './web-auth-storage.js';
 
 /** 服务器选项 */
 export interface ServerOptions {
@@ -25,10 +27,13 @@ export interface ServerOptions {
   wsTicketService?: WsTicketService;
   /** Web -> Relay 链接 token（MYTERMUX_WEB_LINK_TOKEN） */
   webLinkToken?: string;
+  /** Web 登录认证存储 */
+  webAuthStorage?: WebAuthStorage;
 }
 
 /** 允许的默认命令模式 */
 const VALID_COMMAND_MODES: DefaultCommandMode[] = ['zsh', 'bash', 'tmux', 'custom'];
+const WEB_SESSION_COOKIE_NAME = 'mytermux_web_session';
 
 /**
  * 创建 Hono 应用
@@ -54,6 +59,100 @@ export function createServer(options: ServerOptions = {}) {
   // WebSocket 升级端点
   app.get('/ws', (c) => {
     return c.text('WebSocket endpoint - upgrade required', 426);
+  });
+
+  // Web 登录会话查询
+  app.get('/api/web-auth/session', (c) => {
+    const storage = options.webAuthStorage;
+    if (!storage) {
+      return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'Web 认证服务未初始化' }, 503);
+    }
+
+    const sessionId = getCookie(c, WEB_SESSION_COOKIE_NAME);
+    const session = storage.getSessionById(sessionId);
+    return c.json(session);
+  });
+
+  // Web 登录
+  app.post('/api/web-auth/login', async (c) => {
+    const storage = options.webAuthStorage;
+    if (!storage) {
+      return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'Web 认证服务未初始化' }, 503);
+    }
+
+    try {
+      const body = await parseJson<{ username?: string; password?: string }>(c);
+      const username = body?.username ?? '';
+      const password = body?.password ?? '';
+      const result = storage.login(username, password);
+
+      setCookie(c, WEB_SESSION_COOKIE_NAME, result.sessionId, {
+        httpOnly: true,
+        sameSite: 'Strict',
+        secure: isSecureRequest(c),
+        path: '/',
+        maxAge: Math.max(1, Math.floor(storage.getSessionTtlMs() / 1000)),
+      });
+      return c.json(result.session);
+    } catch (error) {
+      if (error instanceof WebAuthError) {
+        return c.json(
+          { error: error.code, message: error.message },
+          { status: error.status as 400 | 401 | 500 },
+        );
+      }
+      return c.json({ error: 'INTERNAL_ERROR', message: toErrorMessage(error) }, 500);
+    }
+  });
+
+  // Web 账号密码修改
+  app.post('/api/web-auth/update-credentials', async (c) => {
+    const storage = options.webAuthStorage;
+    if (!storage) {
+      return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'Web 认证服务未初始化' }, 503);
+    }
+
+    const sessionId = getCookie(c, WEB_SESSION_COOKIE_NAME);
+    if (!sessionId) {
+      return c.json({ error: 'UNAUTHORIZED', message: '请先登录' }, 401);
+    }
+
+    try {
+      const body = await parseJson<{ username?: string; password?: string }>(c);
+      const username = body?.username ?? '';
+      const password = body?.password ?? '';
+      const result = storage.updateCredentials(sessionId, username, password);
+
+      setCookie(c, WEB_SESSION_COOKIE_NAME, result.sessionId, {
+        httpOnly: true,
+        sameSite: 'Strict',
+        secure: isSecureRequest(c),
+        path: '/',
+        maxAge: Math.max(1, Math.floor(storage.getSessionTtlMs() / 1000)),
+      });
+      return c.json(result.session);
+    } catch (error) {
+      if (error instanceof WebAuthError) {
+        return c.json(
+          { error: error.code, message: error.message },
+          { status: error.status as 400 | 401 | 500 },
+        );
+      }
+      return c.json({ error: 'INTERNAL_ERROR', message: toErrorMessage(error) }, 500);
+    }
+  });
+
+  // Web 登出
+  app.post('/api/web-auth/logout', (c) => {
+    const storage = options.webAuthStorage;
+    if (!storage) {
+      return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'Web 认证服务未初始化' }, 503);
+    }
+
+    const sessionId = getCookie(c, WEB_SESSION_COOKIE_NAME);
+    storage.logout(sessionId);
+    deleteCookie(c, WEB_SESSION_COOKIE_NAME, { path: '/' });
+    return c.body(null, 204);
   });
 
   // Daemon 管理 - 在线+配置聚合
@@ -214,6 +313,10 @@ export function createServer(options: ServerOptions = {}) {
         '/health': 'GET - 健康检查',
         '/ws': 'WebSocket - 设备连接端点',
         '/api/ws-ticket': 'POST - 签发一次性 ws ticket',
+        '/api/web-auth/session': 'GET - Web 登录会话',
+        '/api/web-auth/login': 'POST - Web 账号登录',
+        '/api/web-auth/update-credentials': 'POST - Web 修改账号密码',
+        '/api/web-auth/logout': 'POST - Web 登出',
         '/api/daemons': 'GET - 在线 daemon 与 profile 聚合视图',
         '/api/daemon-profiles': 'POST - 已禁用（profile 自动创建）',
         '/api/daemon-profiles/:id': 'PATCH/DELETE - 更新或删除（仅离线可删除）',
@@ -324,6 +427,16 @@ function normalizeCommandMode(value: unknown): DefaultCommandMode | null {
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '未知错误';
+}
+
+function isSecureRequest(c: Context): boolean {
+  const forwardedProto = c.req.header('x-forwarded-proto')?.toLowerCase();
+  if (forwardedProto === 'https') {
+    return true;
+  }
+
+  const url = c.req.url.toLowerCase();
+  return url.startsWith('https://');
 }
 
 /**

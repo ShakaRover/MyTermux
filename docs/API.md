@@ -7,7 +7,7 @@ MyTermux 协议分为两层：
 1. 传输层（Relay 可见）：设备注册、token 认证、路由
 2. 应用层（E2E 加密）：终端会话管理与交互
 
-说明：Web 登录和 Web 偏好配置已迁移到 Web 本地数据库，不再通过 Relay `/api/web-auth/*` 或 `/api/web-preferences`。
+说明：Web 登录改为服务端 `web.db` 持久化；Web 本地数据库仅保存偏好配置（快捷键、Relay 地址等）。
 
 ## 0. Token 定义
 
@@ -15,12 +15,70 @@ MyTermux 协议分为两层：
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 的链路授权 token（Relay 配置）
 - `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token（Daemon 配置，存储在 `daemon.db`）
 
-## 1. Web 本地认证（非 Relay API）
+## 1. Web 认证 API（服务端 `web.db`）
 
 - 默认账号：`admin` / `mytermux`
 - 首次登录必须修改账号和密码
-- 存储位置：浏览器 IndexedDB（`mytermux_web_db`）
-- 会话、快捷键、Relay 地址与 Web Link Token 都在 Web 本地数据库中管理
+- 账号密码哈希与会话保存在 `~/.mytermux/web.db`
+- 浏览器通过 HttpOnly Cookie 维持登录态（默认 12 小时）
+
+### 1.1 `GET /api/web-auth/session`
+
+响应（未登录）：
+
+```json
+{
+  "authenticated": false,
+  "username": "",
+  "mustChangePassword": false,
+  "expiresAt": 0
+}
+```
+
+响应（已登录）：
+
+```json
+{
+  "authenticated": true,
+  "username": "admin",
+  "mustChangePassword": true,
+  "expiresAt": 1730000000000
+}
+```
+
+### 1.2 `POST /api/web-auth/login`
+
+请求：
+
+```json
+{
+  "username": "admin",
+  "password": "mytermux"
+}
+```
+
+成功后返回会话信息并设置 Cookie。
+
+### 1.3 `POST /api/web-auth/update-credentials`
+
+请求（需已登录）：
+
+```json
+{
+  "username": "new-admin",
+  "password": "new-password-123"
+}
+```
+
+规则：
+
+- 首次修改必须同时更换用户名和密码
+- 密码长度至少 8 位
+
+### 1.4 `POST /api/web-auth/logout`
+
+- 清除服务端会话与 Cookie
+- 返回 `204`
 
 ## 2. Relay HTTP API
 

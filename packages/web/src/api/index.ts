@@ -7,12 +7,6 @@ import type {
 } from '@mytermux/shared';
 import { apiRequest } from './client';
 import {
-  getLocalWebSession,
-  loginLocalWebAdmin,
-  logoutLocalWebAdmin,
-  updateLocalWebAdminCredentials,
-} from '../storage/webAuthDatabase';
-import {
   getLocalWebPreferences,
   getRelayWebLinkToken,
   saveLocalWebPreferences,
@@ -59,19 +53,27 @@ async function resolveRelayAuthHeaders(tokenInput?: string | null): Promise<Reco
 }
 
 export async function loginWebAdmin(username: string, password: string): Promise<WebAuthSession> {
-  return loginLocalWebAdmin(username, password);
+  return apiRequest<WebAuthSession>('/web-auth/login', {
+    method: 'POST',
+    body: { username, password },
+  });
 }
 
 export async function updateWebAdminCredentials(username: string, password: string): Promise<WebAuthSession> {
-  return updateLocalWebAdminCredentials(username, password);
+  return apiRequest<WebAuthSession>('/web-auth/update-credentials', {
+    method: 'POST',
+    body: { username, password },
+  });
 }
 
 export async function logoutWebAdmin(): Promise<void> {
-  await logoutLocalWebAdmin();
+  await apiRequest('/web-auth/logout', {
+    method: 'POST',
+  });
 }
 
 export async function fetchWebSession(): Promise<WebAuthSession> {
-  return getLocalWebSession();
+  return apiRequest<WebAuthSession>('/web-auth/session');
 }
 
 export async function fetchDaemons(): Promise<DaemonListResponse> {

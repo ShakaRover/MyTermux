@@ -25,8 +25,9 @@ pnpm turbo run build
 默认目录：`~/.mytermux`
 
 - Relay：`relay.db`（daemon profile）
+- WebAuth：`web.db`（Web 账号与会话）
 - Daemon：`daemon.db`（设备身份、token、已认证客户端）
-- Web：浏览器 IndexedDB（`mytermux_web_db`）
+- Web：浏览器 IndexedDB（`mytermux_web_db`，仅偏好配置）
 
 说明：旧 `~/.mytermux/auth.json` 仅用于 daemon 启动时一次性迁移到 `daemon.db`。
 
@@ -38,6 +39,8 @@ pnpm turbo run build
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 前置 token（推荐开启）
 - `RELAY_WEB_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
 - `RELAY_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/relay.db`）
+- `WEB_DB_PATH`：Web 认证数据库路径（默认 `~/.mytermux/web.db`）
+- `WEB_ADMIN_USERNAME` / `WEB_ADMIN_PASSWORD`：首次初始化管理员账号（仅 `web.db` 首次创建时生效）
 
 示例：
 
@@ -46,6 +49,9 @@ export MYTERMUX_WEB_LINK_TOKEN='<web-link-token>'
 export MYTERMUX_DAEMON_LINK_TOKEN='<daemon-link-token>'
 export RELAY_WEB_MASTER_KEY='<32-byte-random-secret>'
 export RELAY_DB_PATH=/var/lib/mytermux/relay.db
+export WEB_DB_PATH=/var/lib/mytermux/web.db
+export WEB_ADMIN_USERNAME='admin'
+export WEB_ADMIN_PASSWORD='mytermux'
 ```
 
 ### 4.2 启动 Relay
@@ -155,6 +161,9 @@ Environment=MYTERMUX_WEB_LINK_TOKEN=<web-link-token>
 Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
 Environment=RELAY_WEB_MASTER_KEY=<master-key>
 Environment=RELAY_DB_PATH=/var/lib/mytermux/relay.db
+Environment=WEB_DB_PATH=/var/lib/mytermux/web.db
+Environment=WEB_ADMIN_USERNAME=<web-admin-username>
+Environment=WEB_ADMIN_PASSWORD=<web-admin-password>
 
 [Install]
 WantedBy=multi-user.target
@@ -185,7 +194,7 @@ WantedBy=multi-user.target
 
 - 本地开发/测试不要配置证书，统一走 HTTP/WS
 - 生产必须由 Nginx 提供 TLS，外部流量统一走 HTTPS/WSS
-- Web 本地默认账号 `admin` / `mytermux` 仅用于初始化，首次登录必须改密
+- Web 默认账号 `admin` / `mytermux` 仅用于初始化，首次登录必须改密
 - `RELAY_WEB_MASTER_KEY` 必须高强度随机并妥善保管
 - `MYTERMUX_WEB_LINK_TOKEN` / `MYTERMUX_DAEMON_LINK_TOKEN` 仅通过可信渠道分发
 - `MYTERMUX_DAEMON_TOKEN` 仅通过可信渠道分发，并定期轮换

@@ -4,22 +4,23 @@
 
 MyTermux 当前职责边界：
 
-- Web：本地登录与管理 UI（不走 Relay 登录）
-- Relay：中继与 profile 管理 API
+- Web：管理 UI（调用服务端 WebAuth API 登录）
+- Relay：中继、profile 管理 API、WebAuth API
 - Daemon：终端会话执行与 daemon token 管理
 
 ## 2. 数据边界（必须遵守）
 
-1. Web 只写浏览器本地数据库（IndexedDB：`mytermux_web_db`）
+1. Web 浏览器本地数据库仅保存偏好（IndexedDB：`mytermux_web_db`）
 2. Relay 只写 `relay.db`（daemon profile）
-3. Daemon 只写 `daemon.db`（设备身份/token/已认证客户端）
+3. WebAuth 只写 `web.db`（Web 账号与会话）
+4. Daemon 只写 `daemon.db`（设备身份/token/已认证客户端）
 
 禁止跨项目混用数据库。
 
 ## 3. 核心链路
 
-1. Web 本地账号登录（默认 `admin` / `mytermux`，首次登录强制改密）
-2. Web 读取本地配置，调用 Relay 管理 API（必要时携带 `x-mytermux-web-link-token`）
+1. Web 调用 `/api/web-auth/*` 登录（默认 `admin` / `mytermux`，首次登录强制改密）
+2. Web 读取本地偏好配置，调用 Relay 管理 API（必要时携带 `x-mytermux-web-link-token`）
 3. Relay 按在线 daemon 自动生成 profile，并签发 ws-ticket
 4. Web 用 ws-ticket 连接 Relay，Relay 路由到 Daemon
 5. 应用层会话消息走 E2E 加密
@@ -49,6 +50,7 @@ pnpm install
 pnpm turbo run build
 cp .env.example .env
 # 编辑 .env（至少填写 MYTERMUX_WEB_LINK_TOKEN / MYTERMUX_DAEMON_LINK_TOKEN / RELAY_WEB_MASTER_KEY）
+# 可选：WEB_ADMIN_USERNAME / WEB_ADMIN_PASSWORD（仅首次初始化 web.db 时生效）
 ```
 
 启动：
@@ -83,9 +85,9 @@ pnpm --filter @mytermux/daemon relay-token -- --clear
 ## 8. 调试建议
 
 - Web 登录问题：
-  - 先确认浏览器本地数据库是否被清理
-  - 默认账号为 `admin` / `mytermux`
-  - 首次登录必须先改账号密码
+  - 先确认 Relay 进程可访问 `/api/web-auth/session`
+  - 检查 `~/.mytermux/web.db` 是否可读写
+  - 默认账号为 `admin` / `mytermux`，首次登录必须先改账号密码
 - Relay 管理 API 401：
   - 优先检查 `MYTERMUX_WEB_LINK_TOKEN` 与 `x-mytermux-web-link-token` 是否一致
 - Daemon token 问题：

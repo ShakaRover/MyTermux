@@ -40,6 +40,7 @@ pnpm start:local:test
 1. 打开 `http://127.0.0.1:62100/login`
 2. 使用默认账号密码 `admin` / `mytermux` 登录
 3. 首次登录必须进入账号初始化页并修改账号和密码
+4. 关闭浏览器后重新打开，使用新账号密码应仍可登录（验证 `web.db` 持久化）
 4. 完成账号初始化后，在 `/daemons` 验证在线 daemon 自动生成 profile
 5. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）
 6. 验证可在 Web 端保存 Relay 地址与 `MYTERMUX_WEB_LINK_TOKEN` 配置
@@ -78,7 +79,7 @@ rg -n --glob '!node_modules' 'token_auth|token_ack|mytermux-|ws-ticket|x-mytermu
 
 - [ ] `build/typecheck/test` 全绿
 - [ ] 测试环境全程使用无证书模型（HTTP + WS）
-- [ ] Web 登录完全本地化（不请求 Relay `/api/web-auth/*`）
+- [ ] Web 登录走服务端 `/api/web-auth/*`，账号会话写入 `web.db`
 - [ ] Web 登录后可查看在线 daemon 与 profile 并连接
 - [ ] `MYTERMUX_WEB_LINK_TOKEN` 开启时，缺失或错误 token 会拒绝管理 API 与 ws-ticket
 - [ ] `MYTERMUX_DAEMON_LINK_TOKEN` 开启时，daemon 链接会被校验

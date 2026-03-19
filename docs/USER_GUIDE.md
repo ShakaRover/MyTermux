@@ -6,7 +6,7 @@ MyTermux 当前推荐流程：
 
 1. 启动 relay（中继与 profile API）
 2. 启动 daemon（提供 `MYTERMUX_DAEMON_TOKEN`）
-3. 浏览器登录 Web 管理中心（本地登录，不依赖 Relay）
+3. 浏览器登录 Web 管理中心（服务端 `web.db` 登录）
 4. 在 Web 中编辑 daemon profile 配置
 5. 连接 daemon 并进入终端会话
 
@@ -32,6 +32,7 @@ cp .env.example .env
 - `MYTERMUX_WEB_LINK_TOKEN`
 - `MYTERMUX_DAEMON_LINK_TOKEN`
 - `RELAY_WEB_MASTER_KEY`
+- `WEB_ADMIN_USERNAME` / `WEB_ADMIN_PASSWORD`（可选，首次初始化管理员账号）
 
 ### 3.2 一键启动本地测试
 
@@ -51,7 +52,8 @@ pnpm start:local:test
 
 - 默认账号密码：`admin` / `mytermux`
 - 首次登录后必须修改账号和密码
-- 登录信息保存在浏览器本地数据库（IndexedDB：`mytermux_web_db`）
+- 登录信息保存在服务端 `~/.mytermux/web.db`
+- 浏览器只保存 HttpOnly Cookie 会话
 
 ### 3.4 分别启动（可选）
 
@@ -144,17 +146,19 @@ bash ./scripts/daemon/set-relay-token.sh --clear
 - `daemon.db`：daemon 认证与 token 数据
 - `daemon.pid` / `daemon.status`
 - `relay.db`：daemon profile 数据
+- `web.db`：Web 管理端账号与会话
 - `relay.pid` / `relay.log`
 
 Web 本地数据：
 
-- 浏览器 IndexedDB：`mytermux_web_db`
+- 浏览器 IndexedDB：`mytermux_web_db`（仅偏好配置）
 
 ## 8. 故障排查
 
 ### 8.1 Relay 状态正常但 Web 登录失败
 
-- Web 登录不依赖 Relay，先检查浏览器本地数据库是否被清理
+- 先检查 `GET /api/web-auth/session` 是否可访问
+- 检查 `~/.mytermux/web.db` 文件权限
 - 确认默认账号 `admin` / `mytermux`（首次登录后需改密）
 
 ### 8.2 Daemon 在线但无法连接
