@@ -129,9 +129,9 @@ export function useWebSocket(): UseWebSocketReturn {
       case 'error': {
         try {
           const payload = JSON.parse(data.payload) as { message?: string };
-          store.setError(payload.message || 'Relay 返回错误');
+          store.setError(payload.message || 'Server 返回错误');
         } catch {
-          store.setError('Relay 返回错误');
+          store.setError('Server 返回错误');
         }
         break;
       }

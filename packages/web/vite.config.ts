@@ -6,8 +6,8 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 // 是否启用 HTTPS（远程部署时需要，因为 Web Crypto API 要求安全上下文）
 const enableHttps = process.env.VITE_HTTPS === 'true';
 
-// Relay 服务器地址（用于 /api 与 /ws 代理）
-const relayTarget = process.env.VITE_RELAY_URL || 'ws://127.0.0.1:62200/ws';
+// Server 地址（用于 /api 与 /ws 代理）
+const relayTarget = process.env.VITE_SERVER_URL || process.env.VITE_RELAY_URL || 'ws://127.0.0.1:62200/ws';
 
 // 从 ws(s)://host:port/path 中提取 http(s)://host:port
 function extractProxyTarget(wsUrl: string): string {

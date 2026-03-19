@@ -514,14 +514,14 @@ export function DaemonHubPage() {
 
           <section className="space-y-4">
             <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-4 md:p-5">
-              <h2 className="text-lg font-semibold">Relay 连接配置</h2>
+              <h2 className="text-lg font-semibold">Server 连接配置</h2>
               <p className="mt-1 text-xs text-gray-500">
-                登录后可在这里配置 Web Client 使用的 Relay 地址与 ws-ticket 授权 token。
+                登录后可在这里配置 Web Client 使用的 Server（兼容旧称 Relay）地址与 ws-ticket 授权 token。
               </p>
 
               <div className="mt-4 space-y-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Relay WebSocket 地址</label>
+                  <label className="block text-xs text-gray-400 mb-1.5">Server WebSocket 地址</label>
                   <input
                     type="text"
                     value={relayUrlDraft}
@@ -532,7 +532,7 @@ export function DaemonHubPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Relay Web Link Token（可选）</label>
+                  <label className="block text-xs text-gray-400 mb-1.5">Server Web Link Token（可选）</label>
                   <input
                     type="text"
                     value={webLinkTokenDraft}
@@ -549,7 +549,7 @@ export function DaemonHubPage() {
                 disabled={prefsLoading}
                 className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
               >
-                {prefsLoading ? '保存中...' : '保存 Relay 配置'}
+                {prefsLoading ? '保存中...' : '保存 Server 配置'}
               </button>
             </div>
 

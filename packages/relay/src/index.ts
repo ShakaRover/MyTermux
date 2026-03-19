@@ -1,5 +1,5 @@
 /**
- * @mytermux/relay 中继服务器入口
+ * @mytermux/relay Server 入口
  */
 
 import { serve } from '@hono/node-server';
@@ -15,7 +15,7 @@ const hostname = process.env['HOST'] || '127.0.0.1';
 const runtime = initializeRelayRuntime();
 const { app, deviceRegistry, wsHandler } = runtime;
 
-console.log(`[Relay] MyTermux Relay Server 启动中，地址: ${hostname}:${port}...`);
+console.log(`[Server] MyTermux Server 启动中，地址: ${hostname}:${port}...`);
 
 // 启动 HTTP 服务器
 const httpServer = serve({
@@ -37,17 +37,17 @@ wss.on('connection', (ws, request: IncomingMessage) => {
 
 // 处理 WebSocket 服务器错误
 wss.on('error', (error) => {
-  console.error('[Relay] WebSocket 服务器错误:', error);
+  console.error('[Server] WebSocket 服务器错误:', error);
 });
 
-console.log('[Relay] MyTermux Relay Server 已启动');
-console.log(`[Relay] HTTP: http://${hostname}:${port}`);
-console.log(`[Relay] WebSocket: ws://${hostname}:${port}/ws`);
-console.log(`[Relay] 健康检查: http://${hostname}:${port}/health`);
+console.log('[Server] MyTermux Server 已启动');
+console.log(`[Server] HTTP: http://${hostname}:${port}`);
+console.log(`[Server] WebSocket: ws://${hostname}:${port}/ws`);
+console.log(`[Server] 健康检查: http://${hostname}:${port}/health`);
 
 // 优雅关闭处理
 function gracefulShutdown(signal: string): void {
-  console.log(`\n[Relay] 收到 ${signal} 信号，正在关闭服务器...`);
+  console.log(`\n[Server] 收到 ${signal} 信号，正在关闭服务器...`);
 
   // 停止清理定时器
   deviceRegistry.stopCleanupTimer();
@@ -59,18 +59,18 @@ function gracefulShutdown(signal: string): void {
 
   // 关闭 WebSocket 服务器
   wss.close(() => {
-    console.log('[Relay] WebSocket 服务器已关闭');
+    console.log('[Server] WebSocket 服务器已关闭');
   });
 
   // 关闭 HTTP 服务器
   httpServer.close(() => {
-    console.log('[Relay] HTTP 服务器已关闭');
+    console.log('[Server] HTTP 服务器已关闭');
     process.exit(0);
   });
 
   // 强制退出超时
   setTimeout(() => {
-    console.error('[Relay] 强制退出');
+    console.error('[Server] 强制退出');
     process.exit(1);
   }, 10000);
 }

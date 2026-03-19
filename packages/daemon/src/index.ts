@@ -7,7 +7,8 @@
  * - mytermux stop   停止守护进程
  * - mytermux status 查看状态
  * - mytermux token  查看/重置 MYTERMUX_DAEMON_TOKEN
- * - mytermux relay-token 查看/设置 daemon -> Relay 链路 token
+ * - mytermux server-token 查看/设置 daemon -> Server 链路 token
+ * - mytermux relay-token 兼容旧命令（会提示迁移）
  */
 
 import { Command } from 'commander';
@@ -127,7 +128,7 @@ async function readStatusFile(): Promise<Record<string, unknown> | null> {
 }
 
 /**
- * 解析 daemon -> Relay 链路 token
+ * 解析 daemon -> Server 链路 token
  * 优先级：CLI 参数 > 环境变量 > daemon.db 持久化配置
  */
 async function resolveDaemonLinkToken(tokenFromCli?: string): Promise<string> {
@@ -143,6 +144,22 @@ async function resolveDaemonLinkToken(tokenFromCli?: string): Promise<string> {
 
   const saved = await readDaemonLinkToken();
   return saved?.trim() || '';
+}
+
+/**
+ * 解析 daemon -> Server 地址
+ * 优先级：--server > --relay(兼容) > 环境变量 > 默认值
+ */
+function resolveServerUrl(serverFromCli: string | undefined, relayFromCli: string | undefined): string {
+  const cliServer = serverFromCli?.trim();
+  if (cliServer) {
+    return cliServer;
+  }
+  const cliRelay = relayFromCli?.trim();
+  if (cliRelay) {
+    return cliRelay;
+  }
+  return process.env['SERVER_URL'] || process.env['RELAY_URL'] || 'ws://127.0.0.1:62200';
 }
 
 // ============================================================================
@@ -162,12 +179,20 @@ program
 program
   .command('start')
   .description('启动守护进程')
-  .option('-r, --relay <url>', '中继服务器地址', process.env['RELAY_URL'] || 'ws://127.0.0.1:62200')
+  .option('-s, --server <url>', 'Server 地址', process.env['SERVER_URL'] || process.env['RELAY_URL'] || 'ws://127.0.0.1:62200')
+  .option('-r, --relay <url>', '兼容旧参数，等价于 --server')
   .option('--listen-host <host>', '本地状态监听地址', process.env['DAEMON_HOST'] || '127.0.0.1')
   .option('--listen-port <port>', '本地状态监听端口', process.env['DAEMON_PORT'] || '62300')
-  .option('--daemon-link-token <token>', 'daemon 连接 Relay 链路 token（优先级高于环境变量与 daemon.db）')
+  .option('--daemon-link-token <token>', 'daemon 连接 Server 链路 token（优先级高于环境变量与 daemon.db）')
   .option('-f, --foreground', '前台运行（不作为守护进程）', false)
-  .action(async (options: { relay: string; foreground: boolean; daemonLinkToken?: string; listenHost: string; listenPort: string }) => {
+  .action(async (options: {
+    server?: string;
+    relay?: string;
+    foreground: boolean;
+    daemonLinkToken?: string;
+    listenHost: string;
+    listenPort: string;
+  }) => {
     // 检查是否已有进程在运行
     const existingPid = await readPidFile();
     if (existingPid && isProcessRunning(existingPid)) {
@@ -175,12 +200,16 @@ program
       return;
     }
 
+    if (options.relay?.trim()) {
+      console.warn('[daemon] 参数 "--relay" 已弃用，请改用 "--server"');
+    }
+    const serverUrl = resolveServerUrl(options.server, options.relay);
     const daemonLinkToken = await resolveDaemonLinkToken(options.daemonLinkToken);
 
     // 后台模式：fork 子进程并立即退出父进程
     if (!options.foreground) {
       const scriptPath = fileURLToPath(import.meta.url);
-      const args = ['start', '-f', '-r', options.relay];
+      const args = ['start', '-f', '--server', serverUrl];
       if (daemonLinkToken) {
         args.push('--daemon-link-token', daemonLinkToken);
       }
@@ -240,14 +269,14 @@ program
     }
 
     // 前台模式：直接在当前进程运行
-    console.log(`启动守护进程，连接到中继服务器: ${options.relay}`);
+    console.log(`启动守护进程，连接到 Server: ${serverUrl}`);
     const listenHost = options.listenHost.trim() || '127.0.0.1';
     const parsedListenPort = parseInt(options.listenPort, 10);
     const listenPort = Number.isFinite(parsedListenPort) ? parsedListenPort : 62300;
     console.log(`本地状态监听地址: http://${listenHost}:${listenPort}`);
 
     const daemon = new Daemon({
-      relayUrl: options.relay,
+      relayUrl: serverUrl,
       listenHost,
       listenPort,
       ...(daemonLinkToken ? { daemonLinkToken } : {}),
@@ -259,11 +288,11 @@ program
     });
 
     daemon.on('connected', () => {
-      console.log('已连接到中继服务器');
+      console.log('已连接到 Server');
     });
 
     daemon.on('disconnected', () => {
-      console.log('与中继服务器断开连接');
+      console.log('与 Server 断开连接');
     });
 
     daemon.on('accessToken', (token) => {
@@ -430,49 +459,69 @@ program
     }
   });
 
+async function handleDaemonLinkTokenCommand(
+  options: { set?: string; clear?: boolean },
+  commandName: 'server-token' | 'relay-token',
+): Promise<void> {
+  try {
+    const nextToken = options.set?.trim() || '';
+    const shouldClear = !!options.clear;
+
+    if (nextToken && shouldClear) {
+      console.error('参数冲突: --set 与 --clear 不能同时使用');
+      process.exit(1);
+    }
+
+    if (nextToken) {
+      await setDaemonLinkToken(nextToken);
+      console.log('MYTERMUX_DAEMON_LINK_TOKEN 已保存到 daemon.db');
+      console.log('注意: 若 daemon 正在运行，新配置将在下次启动时生效');
+      return;
+    }
+
+    if (shouldClear) {
+      await clearDaemonLinkToken();
+      console.log('MYTERMUX_DAEMON_LINK_TOKEN 已清空');
+      console.log('注意: 若 daemon 正在运行，新配置将在下次启动时生效');
+      return;
+    }
+
+    const token = await readDaemonLinkToken();
+    if (!token) {
+      console.log('MYTERMUX_DAEMON_LINK_TOKEN: (未设置)');
+      return;
+    }
+
+    console.log(`MYTERMUX_DAEMON_LINK_TOKEN: ${token}`);
+  } catch (error) {
+    console.error(`${commandName} 操作失败:`, error instanceof Error ? error.message : error);
+    process.exit(1);
+  }
+}
+
 /**
- * relay-token 命令 - 查看/设置 daemon -> Relay 链路 token
+ * server-token 命令 - 查看/设置 daemon -> Server 链路 token
+ */
+program
+  .command('server-token')
+  .description('查看/设置 MYTERMUX_DAEMON_LINK_TOKEN（daemon -> Server 链路 token）')
+  .option('-s, --set <token>', '设置新的 server token')
+  .option('--clear', '清空已保存 server token', false)
+  .action(async (options: { set?: string; clear?: boolean }) => {
+    await handleDaemonLinkTokenCommand(options, 'server-token');
+  });
+
+/**
+ * relay-token 命令 - 兼容旧命令
  */
 program
   .command('relay-token')
-  .description('查看/设置 MYTERMUX_DAEMON_LINK_TOKEN（daemon -> Relay 链路 token）')
+  .description('兼容旧命令，等价于 server-token（会提示迁移）')
   .option('-s, --set <token>', '设置新的 relay token')
   .option('--clear', '清空已保存 relay token', false)
   .action(async (options: { set?: string; clear?: boolean }) => {
-    try {
-      const nextToken = options.set?.trim() || '';
-      const shouldClear = !!options.clear;
-
-      if (nextToken && shouldClear) {
-        console.error('参数冲突: --set 与 --clear 不能同时使用');
-        process.exit(1);
-      }
-
-      if (nextToken) {
-        await setDaemonLinkToken(nextToken);
-        console.log('MYTERMUX_DAEMON_LINK_TOKEN 已保存到 daemon.db');
-        console.log('注意: 若 daemon 正在运行，新配置将在下次启动时生效');
-        return;
-      }
-
-      if (shouldClear) {
-        await clearDaemonLinkToken();
-        console.log('MYTERMUX_DAEMON_LINK_TOKEN 已清空');
-        console.log('注意: 若 daemon 正在运行，新配置将在下次启动时生效');
-        return;
-      }
-
-      const token = await readDaemonLinkToken();
-      if (!token) {
-        console.log('MYTERMUX_DAEMON_LINK_TOKEN: (未设置)');
-        return;
-      }
-
-      console.log(`MYTERMUX_DAEMON_LINK_TOKEN: ${token}`);
-    } catch (error) {
-      console.error('relay-token 操作失败:', error instanceof Error ? error.message : error);
-      process.exit(1);
-    }
+    console.warn('[daemon] 命令 "relay-token" 已弃用，请改用 "server-token"');
+    await handleDaemonLinkTokenCommand(options, 'relay-token');
   });
 
 program.parse();

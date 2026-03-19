@@ -1,6 +1,6 @@
 # MyTermux 部署文档
 
-目标：部署可长期运行的 MyTermux（Relay + Daemon + Web）。
+目标：部署可长期运行的 MyTermux（Server + Daemon + Web）。
 
 ## 0. 运行模型（强制约束）
 
@@ -24,21 +24,22 @@ pnpm turbo run build
 
 默认目录：`~/.mytermux`
 
-- Relay：`relay.db`（daemon profile）
+- Server：`relay.db`（daemon profile）
 - WebAuth：`web.db`（Web 账号与会话）
 - Daemon：`daemon.db`（设备身份、token、已认证客户端）
 - Web：浏览器 IndexedDB（`mytermux_web_db`，仅偏好配置）
 
 说明：旧 `~/.mytermux/auth.json` 仅用于 daemon 启动时一次性迁移到 `daemon.db`。
 
-## 4. Relay 部署
+## 4. Server 部署
 
 ### 4.1 必要环境变量
 
-- `MYTERMUX_WEB_LINK_TOKEN`：Web 访问 Relay 管理 API 与 ws-ticket 的鉴权 token（推荐开启）
-- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 前置 token（推荐开启）
-- `RELAY_WEB_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
-- `RELAY_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/relay.db`）
+- `MYTERMUX_WEB_LINK_TOKEN`：Web 访问 Server 管理 API 与 ws-ticket 的鉴权 token（推荐开启）
+- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Server 前置 token（推荐开启）
+- `SERVER_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
+- `SERVER_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/relay.db`）
+- 兼容旧变量：`RELAY_WEB_MASTER_KEY` / `RELAY_DB_PATH`
 - `WEB_DB_PATH`：Web 认证数据库路径（默认 `~/.mytermux/web.db`）
 - `WEB_ADMIN_USERNAME` / `WEB_ADMIN_PASSWORD`：首次初始化管理员账号（仅 `web.db` 首次创建时生效）
 
@@ -47,19 +48,26 @@ pnpm turbo run build
 ```bash
 export MYTERMUX_WEB_LINK_TOKEN='<web-link-token>'
 export MYTERMUX_DAEMON_LINK_TOKEN='<daemon-link-token>'
-export RELAY_WEB_MASTER_KEY='<32-byte-random-secret>'
-export RELAY_DB_PATH=/var/lib/mytermux/relay.db
+export SERVER_MASTER_KEY='<32-byte-random-secret>'
+export SERVER_DB_PATH=/var/lib/mytermux/relay.db
 export WEB_DB_PATH=/var/lib/mytermux/web.db
 export WEB_ADMIN_USERNAME='admin'
 export WEB_ADMIN_PASSWORD='mytermux'
 ```
 
-### 4.2 启动 Relay
+### 4.2 启动 Server
 
-说明：生产场景下 Relay 监听内网明文端口（默认 `127.0.0.1:62200`），由 Nginx 负责证书与 TLS。
+说明：生产场景下 Server 监听内网明文端口（默认 `127.0.0.1:62200`），由 Nginx 负责证书与 TLS。
 
 ```bash
+# 本地仓库脚本（推荐）
+pnpm server:start:fg
+
+# 或包命令
 pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
+
+# 全局命令（安装后）
+mytermux-server start -f --host 127.0.0.1 --port 62200
 ```
 
 健康检查：
@@ -74,11 +82,12 @@ curl http://127.0.0.1:62200/health
 
 ```bash
 # 方式 1：启动时直接传入
-pnpm --filter @mytermux/daemon start -- --relay ws://<relay-host>:62200 --daemon-link-token '<daemon-link-token>'
+pnpm --filter @mytermux/daemon start -- --server ws://<server-host>:62200 --daemon-link-token '<daemon-link-token>'
 
 # 方式 2：先持久化到 daemon.db（后续 start 可不再传 --daemon-link-token）
-pnpm --filter @mytermux/daemon relay-token -- --set '<daemon-link-token>'
-pnpm --filter @mytermux/daemon start -- --relay ws://<relay-host>:62200
+pnpm --filter @mytermux/daemon server-token -- --set '<daemon-link-token>'
+pnpm --filter @mytermux/daemon start -- --server ws://<server-host>:62200
+# 兼容旧命令：relay-token / --relay
 ```
 
 查看 `MYTERMUX_DAEMON_TOKEN`：
@@ -95,7 +104,7 @@ Daemon 默认本地监听：`http://127.0.0.1:62300`
 ## 6. Web 部署
 
 ```bash
-# 仅当 Relay 开启 MYTERMUX_WEB_LINK_TOKEN 时需要
+# 仅当 Server 开启 MYTERMUX_WEB_LINK_TOKEN 时需要
 export VITE_MYTERMUX_WEB_LINK_TOKEN='<web-link-token>'
 
 pnpm --filter @mytermux/web build
@@ -142,25 +151,25 @@ server {
 
 ## 8. systemd 示例
 
-### 8.1 relay.service
+### 8.1 server.service
 
 ```ini
 [Unit]
-Description=MyTermux Relay
+Description=MyTermux Server
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/srv/mytermux
-ExecStart=/usr/bin/pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
+ExecStart=/usr/bin/mytermux-server start -f --host 127.0.0.1 --port 62200
 Restart=always
 RestartSec=3
 User=mytermux
 Environment=NODE_ENV=production
 Environment=MYTERMUX_WEB_LINK_TOKEN=<web-link-token>
 Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
-Environment=RELAY_WEB_MASTER_KEY=<master-key>
-Environment=RELAY_DB_PATH=/var/lib/mytermux/relay.db
+Environment=SERVER_MASTER_KEY=<master-key>
+Environment=SERVER_DB_PATH=/var/lib/mytermux/relay.db
 Environment=WEB_DB_PATH=/var/lib/mytermux/web.db
 Environment=WEB_ADMIN_USERNAME=<web-admin-username>
 Environment=WEB_ADMIN_PASSWORD=<web-admin-password>
@@ -179,7 +188,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/srv/mytermux
-ExecStart=/usr/bin/pnpm --filter @mytermux/daemon start:fg -- --relay wss://mytermux.example.com/ws --listen-host 127.0.0.1 --listen-port 62300
+ExecStart=/usr/bin/pnpm --filter @mytermux/daemon start:fg -- --server wss://mytermux.example.com/ws --listen-host 127.0.0.1 --listen-port 62300
 Restart=always
 RestartSec=3
 User=mytermux
@@ -195,7 +204,7 @@ WantedBy=multi-user.target
 - 本地开发/测试不要配置证书，统一走 HTTP/WS
 - 生产必须由 Nginx 提供 TLS，外部流量统一走 HTTPS/WSS
 - Web 默认账号 `admin` / `mytermux` 仅用于初始化，首次登录必须改密
-- `RELAY_WEB_MASTER_KEY` 必须高强度随机并妥善保管
+- `SERVER_MASTER_KEY` 必须高强度随机并妥善保管
 - `MYTERMUX_WEB_LINK_TOKEN` / `MYTERMUX_DAEMON_LINK_TOKEN` 仅通过可信渠道分发
 - `MYTERMUX_DAEMON_TOKEN` 仅通过可信渠道分发，并定期轮换
 

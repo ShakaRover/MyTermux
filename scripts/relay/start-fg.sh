@@ -2,16 +2,5 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck disable=SC1091
-source "${SCRIPT_DIR}/../lib/common.sh"
-
-mytermux_load_env
-mytermux_force_local_no_tls
-mytermux_ensure_relay_dist
-
-RELAY_HOST="${RELAY_HOST:-127.0.0.1}"
-RELAY_PORT="${RELAY_PORT:-62200}"
-
-echo "[relay] 前台启动: http://${RELAY_HOST}:${RELAY_PORT}"
-cd "$MYTERMUX_ROOT_DIR"
-exec pnpm --filter @mytermux/relay exec node dist/cli.js start -f --host "$RELAY_HOST" --port "$RELAY_PORT"
+echo "[relay] 脚本已弃用，请改用 scripts/server/start-fg.sh"
+exec bash "${SCRIPT_DIR}/../server/start-fg.sh" "$@"

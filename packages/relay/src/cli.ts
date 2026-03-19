@@ -3,10 +3,11 @@
  * @mytermux/relay CLI 入口
  *
  * 命令：
- * - mytermux-relay start      启动中继服务器（后台）
- * - mytermux-relay start -f   前台运行
- * - mytermux-relay stop       停止中继服务器
- * - mytermux-relay status     查看状态
+ * - mytermux-server start      启动中继服务器（后台）
+ * - mytermux-server start -f   前台运行
+ * - mytermux-server stop       停止中继服务器
+ * - mytermux-server status     查看状态
+ * - mytermux-relay *           兼容旧命令（会提示迁移）
  */
 
 import { Command } from 'commander';
@@ -36,6 +37,20 @@ const DEFAULT_PORT = 62200;
 
 /** 默认监听地址 */
 const DEFAULT_HOST = '127.0.0.1';
+
+/** 新旧 CLI 名称 */
+const PRIMARY_CLI_NAME = 'mytermux-server';
+const LEGACY_CLI_NAME = 'mytermux-relay';
+const INVOKED_CLI_NAME = path.basename(process.argv[1] || '');
+const IS_LEGACY_CLI = INVOKED_CLI_NAME === LEGACY_CLI_NAME;
+
+function resolveServerPortEnv(): string {
+  return process.env['SERVER_PORT'] || process.env['RELAY_PORT'] || process.env['PORT'] || String(DEFAULT_PORT);
+}
+
+function resolveServerHostEnv(): string {
+  return process.env['SERVER_HOST'] || process.env['RELAY_HOST'] || DEFAULT_HOST;
+}
 
 // ============================================================================
 // 工具函数
@@ -154,9 +169,13 @@ async function stopProcess(pid: number): Promise<void> {
 const program = new Command();
 
 program
-  .name('mytermux-relay')
-  .description('MyTermux Relay Server - 中继服务器管理')
+  .name(PRIMARY_CLI_NAME)
+  .description('MyTermux Server - 控制端服务管理')
   .version('1.0.0');
+
+if (IS_LEGACY_CLI) {
+  console.warn(`[Server] 命令 "${LEGACY_CLI_NAME}" 已弃用，请改用 "${PRIMARY_CLI_NAME}"`);
+}
 
 /**
  * start 命令 - 启动中继服务器
@@ -164,8 +183,8 @@ program
 program
   .command('start')
   .description('启动中继服务器')
-  .option('-p, --port <port>', '监听端口', process.env['RELAY_PORT'] || process.env['PORT'] || String(DEFAULT_PORT))
-  .option('-H, --host <host>', '监听地址', process.env['RELAY_HOST'] || DEFAULT_HOST)
+  .option('-p, --port <port>', '监听端口', resolveServerPortEnv())
+  .option('-H, --host <host>', '监听地址', resolveServerHostEnv())
   .option('--cert <path>', 'TLS 证书文件路径（启用 HTTPS/WSS）', process.env['TLS_CERT'] || '')
   .option('--key <path>', 'TLS 私钥文件路径（启用 HTTPS/WSS）', process.env['TLS_KEY'] || '')
   .option('-f, --foreground', '前台运行（不作为后台进程）', false)
@@ -223,7 +242,13 @@ program
       const child = spawn(process.execPath, [scriptPath, ...args], {
         detached: true,
         stdio: ['ignore', logFd.fd, logFd.fd],
-        env: { ...process.env, PORT: String(port), HOST: host },
+        env: {
+          ...process.env,
+          PORT: String(port),
+          HOST: host,
+          SERVER_PORT: String(port),
+          SERVER_HOST: host,
+        },
       });
 
       child.unref();
@@ -266,7 +291,7 @@ program
     const { app, deviceRegistry, wsHandler } = runtime;
 
     const protocol = useTls ? 's' : '';
-    console.log(`[Relay] MyTermux Relay Server 启动中，地址: ${host}:${port}${useTls ? ' (TLS)' : ''}...`);
+    console.log(`[Server] MyTermux Server 启动中，地址: ${host}:${port}${useTls ? ' (TLS)' : ''}...`);
 
     // 启动 HTTP/HTTPS 服务器
     const serveOptions: Parameters<typeof serve>[0] = {
@@ -300,21 +325,21 @@ program
     });
 
     wss.on('error', (error) => {
-      console.error('[Relay] WebSocket 服务器错误:', error);
+      console.error('[Server] WebSocket 服务器错误:', error);
     });
 
     // 写入 PID 文件
     await writePidFile(process.pid);
 
-    console.log(`[Relay] MyTermux Relay Server 已启动`);
-    console.log(`[Relay] HTTP${protocol}: http${protocol}://${host}:${port}`);
-    console.log(`[Relay] WebSocket: ws${protocol}://${host}:${port}/ws`);
-    console.log(`[Relay] 健康检查: http${protocol}://${host}:${port}/health`);
-    console.log('[Relay] 中继服务器正在前台运行，按 Ctrl+C 停止');
+    console.log('[Server] MyTermux Server 已启动');
+    console.log(`[Server] HTTP${protocol}: http${protocol}://${host}:${port}`);
+    console.log(`[Server] WebSocket: ws${protocol}://${host}:${port}/ws`);
+    console.log(`[Server] 健康检查: http${protocol}://${host}:${port}/health`);
+    console.log('[Server] 服务正在前台运行，按 Ctrl+C 停止');
 
     // 优雅关闭处理
     const cleanup = async (signal: string): Promise<void> => {
-      console.log(`\n[Relay] 收到 ${signal} 信号，正在关闭服务器...`);
+      console.log(`\n[Server] 收到 ${signal} 信号，正在关闭服务器...`);
 
       // 停止清理定时器
       deviceRegistry.stopCleanupTimer();
@@ -327,7 +352,7 @@ program
 
       const tryExit = (): void => {
         if (wssClosed && httpClosed) {
-          console.log('[Relay] 服务器已完全关闭');
+          console.log('[Server] 服务器已完全关闭');
           process.exit(0);
         }
       };
@@ -339,21 +364,21 @@ program
 
       // 关闭 WebSocket 服务器
       wss.close(() => {
-        console.log('[Relay] WebSocket 服务器已关闭');
+        console.log('[Server] WebSocket 服务器已关闭');
         wssClosed = true;
         tryExit();
       });
 
       // 关闭 HTTP 服务器
       httpServer.close(() => {
-        console.log('[Relay] HTTP 服务器已关闭');
+        console.log('[Server] HTTP 服务器已关闭');
         httpClosed = true;
         tryExit();
       });
 
       // 强制退出超时
       setTimeout(() => {
-        console.error('[Relay] 关闭超时，强制退出');
+        console.error('[Server] 关闭超时，强制退出');
         process.exit(1);
       }, 10000);
     };
@@ -368,8 +393,8 @@ program
 program
   .command('stop')
   .description('停止中继服务器')
-  .option('-p, --port <port>', '服务器端口（用于查找进程）', process.env['RELAY_PORT'] || process.env['PORT'] || String(DEFAULT_PORT))
-  .option('-H, --host <host>', '服务器地址（用于健康检查）', process.env['RELAY_HOST'] || DEFAULT_HOST)
+  .option('-p, --port <port>', '服务器端口（用于查找进程）', resolveServerPortEnv())
+  .option('-H, --host <host>', '服务器地址（用于健康检查）', resolveServerHostEnv())
   .action(async (options: { port: string; host: string }) => {
     const port = parseInt(options.port, 10);
     const pid = await readPidFile();
@@ -402,8 +427,8 @@ program
 program
   .command('status')
   .description('查看中继服务器运行状态')
-  .option('-p, --port <port>', '服务器端口（用于健康检查）', process.env['RELAY_PORT'] || process.env['PORT'] || String(DEFAULT_PORT))
-  .option('-H, --host <host>', '服务器地址（用于健康检查）', process.env['RELAY_HOST'] || DEFAULT_HOST)
+  .option('-p, --port <port>', '服务器端口（用于健康检查）', resolveServerPortEnv())
+  .option('-H, --host <host>', '服务器地址（用于健康检查）', resolveServerHostEnv())
   .action(async (options: { port: string; host: string }) => {
     const port = parseInt(options.port, 10);
     const host = options.host;

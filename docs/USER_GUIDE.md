@@ -4,7 +4,7 @@
 
 MyTermux 当前推荐流程：
 
-1. 启动 relay（中继与 profile API）
+1. 启动 server（控制端 API 与中继，兼容旧称 relay）
 2. 启动 daemon（提供 `MYTERMUX_DAEMON_TOKEN`）
 3. 浏览器登录 Web 管理中心（服务端 `web.db` 登录）
 4. 在 Web 中编辑 daemon profile 配置
@@ -14,7 +14,7 @@ MyTermux 当前推荐流程：
 
 - Node.js >= 20
 - pnpm >= 9
-- relay 与 daemon 网络可达
+- server 与 daemon 网络可达
 - 本地使用无证书模型（HTTP + WS）
 
 ## 3. 首次启动
@@ -31,7 +31,7 @@ cp .env.example .env
 
 - `MYTERMUX_WEB_LINK_TOKEN`
 - `MYTERMUX_DAEMON_LINK_TOKEN`
-- `RELAY_WEB_MASTER_KEY`
+- `SERVER_MASTER_KEY`（兼容旧变量 `RELAY_WEB_MASTER_KEY`）
 - `WEB_ADMIN_USERNAME` / `WEB_ADMIN_PASSWORD`（可选，首次初始化管理员账号）
 
 ### 3.2 一键启动本地测试
@@ -43,8 +43,8 @@ pnpm start:local:test
 默认地址：
 
 - Web Client: `http://127.0.0.1:62100`
-- Relay HTTP: `http://127.0.0.1:62200`
-- Relay WebSocket: `ws://127.0.0.1:62200/ws`
+- Server HTTP: `http://127.0.0.1:62200`
+- Server WebSocket: `ws://127.0.0.1:62200/ws`
 
 说明：本地运行不需要证书，不要配置 `TLS_CERT` / `TLS_KEY`。
 
@@ -58,6 +58,10 @@ pnpm start:local:test
 ### 3.4 分别启动（可选）
 
 ```bash
+# 推荐
+bash ./scripts/server/start-fg.sh
+
+# 兼容旧路径（会提示弃用）
 bash ./scripts/relay/start-fg.sh
 bash ./scripts/daemon/start-fg.sh
 bash ./scripts/web/start-fg.sh
@@ -79,11 +83,12 @@ pnpm --filter @mytermux/daemon token
 pnpm --filter @mytermux/daemon token -- --reset
 ```
 
-设置 daemon -> Relay 链路 token（写入 `daemon.db`，下次启动生效）：
+设置 daemon -> Server 链路 token（写入 `daemon.db`，下次启动生效）：
 
 ```bash
-pnpm --filter @mytermux/daemon relay-token -- --set '<daemon-link-token>'
-pnpm --filter @mytermux/daemon relay-token -- --clear
+pnpm --filter @mytermux/daemon server-token -- --set '<daemon-link-token>'
+pnpm --filter @mytermux/daemon server-token -- --clear
+# 兼容旧命令：relay-token
 ```
 
 浏览器打开 `http://127.0.0.1:62100`，进入 `/login` 登录。
@@ -95,7 +100,7 @@ pnpm --filter @mytermux/daemon relay-token -- --clear
 1. 在线 daemon 会自动生成默认 profile（`daemonId` 与 profile 一一对应）
 2. 在线 profile 支持编辑（名称、token、默认目录、默认命令）
 3. daemon 离线后 profile 会保留，可手动删除离线 profile
-4. 可在 Web 保存 Relay WebSocket 地址与 `MYTERMUX_WEB_LINK_TOKEN`
+4. 可在 Web 保存 Server WebSocket 地址与 `MYTERMUX_WEB_LINK_TOKEN`
 5. 点击“连接”进入 `/sessions`
 
 默认命令支持：
@@ -123,11 +128,17 @@ pnpm --filter @mytermux/daemon stop
 pnpm --filter @mytermux/daemon status
 pnpm --filter @mytermux/daemon token
 pnpm --filter @mytermux/daemon token -- --reset
-pnpm --filter @mytermux/daemon relay-token
-pnpm --filter @mytermux/daemon relay-token -- --set '<daemon-link-token>'
-pnpm --filter @mytermux/daemon relay-token -- --clear
+pnpm --filter @mytermux/daemon server-token
+pnpm --filter @mytermux/daemon server-token -- --set '<daemon-link-token>'
+pnpm --filter @mytermux/daemon server-token -- --clear
+# 兼容旧命令：relay-token
 
-# relay
+# server（实现包仍为 @mytermux/relay）
+pnpm server:start:fg
+pnpm server:start:bg
+pnpm server:stop
+
+# 包命令
 pnpm --filter @mytermux/relay start
 pnpm --filter @mytermux/relay stop
 pnpm --filter @mytermux/relay status
@@ -135,8 +146,9 @@ pnpm --filter @mytermux/relay status
 # 脚本方式
 pnpm daemon:token:get
 pnpm daemon:token:reset
-pnpm daemon:relay-token:set -- '<daemon-link-token>'
-bash ./scripts/daemon/set-relay-token.sh --clear
+pnpm daemon:server-token:set -- '<daemon-link-token>'
+bash ./scripts/daemon/set-server-token.sh --clear
+# 兼容旧脚本：scripts/daemon/set-relay-token.sh
 ```
 
 ## 7. 本地数据目录
@@ -145,9 +157,9 @@ bash ./scripts/daemon/set-relay-token.sh --clear
 
 - `daemon.db`：daemon 认证与 token 数据
 - `daemon.pid` / `daemon.status`
-- `relay.db`：daemon profile 数据
+- `relay.db`：server 侧 daemon profile 数据
 - `web.db`：Web 管理端账号与会话
-- `relay.pid` / `relay.log`
+- `relay.pid` / `relay.log`（server 进程）
 
 Web 本地数据：
 
@@ -155,7 +167,7 @@ Web 本地数据：
 
 ## 8. 故障排查
 
-### 8.1 Relay 状态正常但 Web 登录失败
+### 8.1 Server 状态正常但 Web 登录失败
 
 - 先检查 `GET /api/web-auth/session` 是否可访问
 - 检查 `~/.mytermux/web.db` 文件权限
@@ -169,7 +181,7 @@ Web 本地数据：
 
 ### 8.3 终端无输出或频繁断开
 
-- 检查 relay 与 daemon 网络
+- 检查 server 与 daemon 网络
 - 查看 `GET /health` 与 daemon 日志
 - 重连 profile（单活连接会自动清理旧连接）
 

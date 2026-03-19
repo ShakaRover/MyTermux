@@ -4,15 +4,15 @@
 
 MyTermux 协议分为两层：
 
-1. 传输层（Relay 可见）：设备注册、token 认证、路由
+1. 传输层（Server 可见）：设备注册、token 认证、路由
 2. 应用层（E2E 加密）：终端会话管理与交互
 
-说明：Web 登录改为服务端 `web.db` 持久化；Web 本地数据库仅保存偏好配置（快捷键、Relay 地址等）。
+说明：Web 登录改为服务端 `web.db` 持久化；Web 本地数据库仅保存偏好配置（快捷键、Server 地址等）。
 
 ## 0. Token 定义
 
-- `MYTERMUX_WEB_LINK_TOKEN`：Web 访问 Relay 管理 API 与 ws-ticket 的鉴权 token（Relay 配置）
-- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Relay 的链路授权 token（Relay 配置）
+- `MYTERMUX_WEB_LINK_TOKEN`：Web 访问 Server 管理 API 与 ws-ticket 的鉴权 token（Server 配置）
+- `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Server 的链路授权 token（Server 配置）
 - `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token（Daemon 配置，存储在 `daemon.db`）
 
 ## 1. Web 认证 API（服务端 `web.db`）
@@ -80,9 +80,9 @@ MyTermux 协议分为两层：
 - 清除服务端会话与 Cookie
 - 返回 `204`
 
-## 2. Relay HTTP API
+## 2. Server HTTP API（实现包：relay）
 
-当 Relay 配置了 `MYTERMUX_WEB_LINK_TOKEN` 时，以下管理 API 必须带请求头：
+当 Server 配置了 `MYTERMUX_WEB_LINK_TOKEN` 时，以下管理 API 必须带请求头：
 
 ```http
 x-mytermux-web-link-token: <token>
@@ -190,7 +190,7 @@ x-mytermux-web-link-token: <token>
 默认端口：
 
 - Web Client：`127.0.0.1:62100`
-- Relay：`127.0.0.1:62200`
+- Server：`127.0.0.1:62200`
 - Daemon 本地状态监听：`127.0.0.1:62300`
 
 ### 3.1 通用结构

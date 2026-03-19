@@ -20,7 +20,7 @@ pnpm --filter @mytermux/web test
 当前覆盖重点：
 
 - `shared`: 协议/加密
-- `relay`: registry、websocket-handler、ws-ticket、profile API
+- `relay`（server 实现包）: registry、websocket-handler、ws-ticket、profile API
 - `daemon`: `TerminalSession` 的 `pid/startupCommand`
 - `web`: 登录状态、会话状态、连接 URL
 
@@ -41,12 +41,12 @@ pnpm start:local:test
 2. 使用默认账号密码 `admin` / `mytermux` 登录
 3. 首次登录必须进入账号初始化页并修改账号和密码
 4. 关闭浏览器后重新打开，使用新账号密码应仍可登录（验证 `web.db` 持久化）
-4. 完成账号初始化后，在 `/daemons` 验证在线 daemon 自动生成 profile
-5. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）
-6. 验证可在 Web 端保存 Relay 地址与 `MYTERMUX_WEB_LINK_TOKEN` 配置
-7. 点击“连接”进入 `/sessions`
+5. 完成账号初始化后，在 `/daemons` 验证在线 daemon 自动生成 profile
+6. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）
+7. 验证可在 Web 端保存 Server 地址与 `MYTERMUX_WEB_LINK_TOKEN` 配置
+8. 点击“连接”进入 `/sessions`
 
-### 2.3 Relay 鉴权验证（开启 `MYTERMUX_WEB_LINK_TOKEN` 时）
+### 2.3 Server 鉴权验证（开启 `MYTERMUX_WEB_LINK_TOKEN` 时）
 
 1. 不带 `x-mytermux-web-link-token` 请求 `/api/daemons`，应返回 401
 2. 带错误 token 请求 `/api/daemons`，应返回 401

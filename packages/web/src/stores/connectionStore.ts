@@ -72,7 +72,7 @@ const initialState: ConnectionStoreState = {
   keyPair: null,
   sharedKey: null,
   ws: null,
-  relayUrl: import.meta.env.VITE_RELAY_URL || getDefaultRelayUrl(),
+  relayUrl: import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_RELAY_URL || getDefaultRelayUrl(),
   webLinkToken: getDefaultWebLinkToken(),
   activeProfile: null,
   appMessageHandler: null,

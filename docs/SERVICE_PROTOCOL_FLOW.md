@@ -1,8 +1,8 @@
 # MyTermux 服务协议流转图
 
-本文聚焦 Relay / Web / Daemon 的关键协议链路，便于排查认证与路由问题。  
+本文聚焦 Server（兼容旧称 Relay）/ Web / Daemon 的关键协议链路，便于排查认证与路由问题。  
 部署约束：本地/测试统一无证书（HTTP + WS）；生产必须走 Nginx 反向代理并启用证书（HTTPS + WSS）。  
-默认地址：Web Client `127.0.0.1:62100`，Relay `127.0.0.1:62200`，Daemon 本地状态监听 `127.0.0.1:62300`。
+默认地址：Web Client `127.0.0.1:62100`，Server `127.0.0.1:62200`，Daemon 本地状态监听 `127.0.0.1:62300`。
 
 ## 1. 总体链路（HTTP + WebSocket）
 
@@ -10,7 +10,7 @@
 flowchart LR
   W[Web 前端]
   WB[(Web 本地数据库<br/>IndexedDB: mytermux_web_db)]
-  R[Relay]
+  R[Server]
   RB[(relay.db)]
   WA[(web.db)]
   D[Daemon]
@@ -32,13 +32,13 @@ flowchart LR
   D -->|message / heartbeat| R
 ```
 
-## 2. Web 登录 + Relay 管理 API
+## 2. Web 登录 + Server 管理 API
 
 ```mermaid
 sequenceDiagram
   participant W as Web 前端
   participant WA as web.db
-  participant R as Relay
+  participant R as Server
   participant RB as relay.db
 
   W->>R: POST /api/web-auth/login
@@ -69,7 +69,7 @@ sequenceDiagram
 sequenceDiagram
   participant D as Daemon
   participant C as Web 前端(会话阶段)
-  participant R as Relay
+  participant R as Server
 
   D->>R: register(deviceType=daemon, daemonLinkToken, daemonToken, publicKey)
   R->>R: 校验 MYTERMUX_DAEMON_LINK_TOKEN(开启时)
@@ -98,7 +98,7 @@ sequenceDiagram
 ## 4. 关键约束（排障优先看）
 
 - Web 登录通过 `/api/web-auth/*`，账号与会话写入 `web.db`（不写浏览器本地账号）。
-- 当 Relay 开启 `MYTERMUX_WEB_LINK_TOKEN` 时，管理 API 与 ws-ticket 都需要提供正确 token。
+- 当 Server 开启 `MYTERMUX_WEB_LINK_TOKEN` 时，管理 API 与 ws-ticket 都需要提供正确 token。
 - Client 连接 `/ws` 前必须先拿 `ws-ticket`，ticket 仅可消费一次，默认 60 秒过期。
 - `token_auth` 仅允许 `deviceType=client`。
 - `message/heartbeat` 的 `from` 必须与 ws 绑定 `deviceId` 一致，否则会被拒绝并断开。

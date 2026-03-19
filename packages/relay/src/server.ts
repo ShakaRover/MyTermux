@@ -307,7 +307,7 @@ export function createServer(options: ServerOptions = {}) {
   // API 文档/信息
   app.get('/', (c) => {
     return c.json({
-      name: 'MyTermux Relay Server',
+      name: 'MyTermux Server',
       version: '1.0.0',
       endpoints: {
         '/health': 'GET - 健康检查',
