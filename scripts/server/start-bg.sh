@@ -14,4 +14,4 @@ SERVER_PORT="${SERVER_PORT:-62200}"
 
 echo "[server] 后台启动: http://${SERVER_HOST}:${SERVER_PORT}"
 cd "$MYTERMUX_ROOT_DIR"
-exec pnpm --filter @mytermux/relay exec node dist/cli.js start --host "$SERVER_HOST" --port "$SERVER_PORT"
+exec pnpm --filter @mytermux/server exec node dist/cli.js start --host "$SERVER_HOST" --port "$SERVER_PORT"

@@ -1,5 +1,5 @@
 /**
- * @mytermux/relay Server 入口
+ * @mytermux/server Server 入口
  */
 
 import { serve } from '@hono/node-server';

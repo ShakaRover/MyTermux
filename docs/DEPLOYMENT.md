@@ -37,7 +37,7 @@ pnpm turbo run build
 
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Server 前置 token（推荐开启）
 - `SERVER_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
-- `SERVER_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/relay.db`）
+- `SERVER_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/server.db`）
 - `WEB_DB_PATH`：Web 认证数据库路径（默认 `~/.mytermux/web.db`）
 - `WEB_ADMIN_USERNAME` / `WEB_ADMIN_PASSWORD`：首次初始化管理员账号（仅 `web.db` 首次创建时生效）
 
@@ -46,7 +46,7 @@ pnpm turbo run build
 ```bash
 export MYTERMUX_DAEMON_LINK_TOKEN='<daemon-link-token>'
 export SERVER_MASTER_KEY='<32-byte-random-secret>'
-export SERVER_DB_PATH=/var/lib/mytermux/relay.db
+export SERVER_DB_PATH=/var/lib/mytermux/server.db
 export WEB_DB_PATH=/var/lib/mytermux/web.db
 export WEB_ADMIN_USERNAME='admin'
 export WEB_ADMIN_PASSWORD='mytermux'
@@ -61,7 +61,7 @@ export WEB_ADMIN_PASSWORD='mytermux'
 pnpm server:start:fg
 
 # 或包命令
-pnpm --filter @mytermux/relay start:fg -- --host 127.0.0.1 --port 62200
+pnpm --filter @mytermux/server start:fg -- --host 127.0.0.1 --port 62200
 
 # 全局命令（安装后）
 mytermux-server start -f --host 127.0.0.1 --port 62200
@@ -161,7 +161,7 @@ User=mytermux
 Environment=NODE_ENV=production
 Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
 Environment=SERVER_MASTER_KEY=<master-key>
-Environment=SERVER_DB_PATH=/var/lib/mytermux/relay.db
+Environment=SERVER_DB_PATH=/var/lib/mytermux/server.db
 Environment=WEB_DB_PATH=/var/lib/mytermux/web.db
 Environment=WEB_ADMIN_USERNAME=<web-admin-username>
 Environment=WEB_ADMIN_PASSWORD=<web-admin-password>

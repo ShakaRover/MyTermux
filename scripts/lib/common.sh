@@ -76,9 +76,9 @@ mytermux_wait_http_ready() {
 }
 
 mytermux_ensure_server_dist() {
-  if [[ ! -f "${MYTERMUX_ROOT_DIR}/packages/relay/dist/cli.js" ]]; then
+  if [[ ! -f "${MYTERMUX_ROOT_DIR}/packages/server/dist/cli.js" ]]; then
     echo "[server] 未检测到 dist，先执行构建"
-    (cd "$MYTERMUX_ROOT_DIR" && pnpm --filter @mytermux/relay build)
+    (cd "$MYTERMUX_ROOT_DIR" && pnpm --filter @mytermux/server build)
   fi
 }
 

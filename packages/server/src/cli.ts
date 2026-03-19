@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @mytermux/relay CLI 入口
+ * @mytermux/server CLI 入口
  *
  * 命令：
  * - mytermux-server start      启动中继服务器（后台）

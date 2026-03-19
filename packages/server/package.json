@@ -1,5 +1,5 @@
 {
-  "name": "@mytermux/relay",
+  "name": "@mytermux/server",
   "version": "1.0.0",
   "private": true,
   "type": "module",

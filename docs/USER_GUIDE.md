@@ -128,15 +128,15 @@ pnpm --filter @mytermux/daemon server-token
 pnpm --filter @mytermux/daemon server-token -- --set '<daemon-link-token>'
 pnpm --filter @mytermux/daemon server-token -- --clear
 
-# server（实现包仍为 @mytermux/relay）
+# server（实现包仍为 @mytermux/server）
 pnpm server:start:fg
 pnpm server:start:bg
 pnpm server:stop
 
 # 包命令
-pnpm --filter @mytermux/relay start
-pnpm --filter @mytermux/relay stop
-pnpm --filter @mytermux/relay status
+pnpm --filter @mytermux/server start
+pnpm --filter @mytermux/server stop
+pnpm --filter @mytermux/server status
 
 # 脚本方式
 pnpm daemon:token:get

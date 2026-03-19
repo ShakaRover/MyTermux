@@ -11,4 +11,4 @@ SERVER_PORT="${SERVER_PORT:-62200}"
 
 echo "[server] 停止服务"
 cd "$MYTERMUX_ROOT_DIR"
-exec pnpm --filter @mytermux/relay exec node dist/cli.js stop --host "$SERVER_HOST" --port "$SERVER_PORT"
+exec pnpm --filter @mytermux/server exec node dist/cli.js stop --host "$SERVER_HOST" --port "$SERVER_PORT"

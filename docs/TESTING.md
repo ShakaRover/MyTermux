@@ -12,7 +12,7 @@ pnpm turbo run build typecheck test
 
 ```bash
 pnpm --filter @mytermux/shared test
-pnpm --filter @mytermux/relay test
+pnpm --filter @mytermux/server test
 pnpm --filter @mytermux/daemon test
 pnpm --filter @mytermux/web test
 ```
