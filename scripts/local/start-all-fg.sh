@@ -17,8 +17,8 @@ bash "${ROOT_DIR}/scripts/server/start-bg.sh"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/common.sh"
 mytermux_load_env
-SERVER_HOST="${SERVER_HOST:-${RELAY_HOST:-127.0.0.1}}"
-SERVER_PORT="${SERVER_PORT:-${RELAY_PORT:-62200}}"
+SERVER_HOST="${SERVER_HOST:-127.0.0.1}"
+SERVER_PORT="${SERVER_PORT:-62200}"
 echo "[local] 等待 Server 健康检查就绪..."
 if ! mytermux_wait_http_ready "http://${SERVER_HOST}:${SERVER_PORT}/health" 30; then
   echo "[local] Server 未在预期时间内就绪"

@@ -2,7 +2,7 @@
  * Hono 服务器配置
  *
  * 功能：
- * - HTTP: Relay 健康检查与信息页
+ * - HTTP: Server 健康检查与信息页
  * - API: Daemon Profile 管理、ws-ticket
  * - WebSocket 升级: GET /ws
  */
@@ -21,12 +21,10 @@ import { WebAuthError, type WebAuthStorage } from './web-auth-storage.js';
 export interface ServerOptions {
   /** 设备注册管理器（用于健康检查统计 + 在线 daemon 聚合） */
   deviceRegistry?: DeviceRegistry;
-  /** SQLite 存储层 */
+  /** Server SQLite 存储层 */
   storage?: RelayStorage;
   /** ws-ticket 签发器 */
   wsTicketService?: WsTicketService;
-  /** Web -> Relay 链接 token（MYTERMUX_WEB_LINK_TOKEN） */
-  webLinkToken?: string;
   /** Web 登录认证存储 */
   webAuthStorage?: WebAuthStorage;
 }
@@ -40,7 +38,7 @@ const WEB_SESSION_COOKIE_NAME = 'mytermux_web_session';
  */
 export function createServer(options: ServerOptions = {}) {
   const app = new Hono();
-  const requireManagementAccess = createRequireManagementAccessMiddleware(options.webLinkToken);
+  const requireManagementAccess = createRequireManagementAccessMiddleware(options.webAuthStorage);
 
   app.use('*', cors());
 
@@ -264,20 +262,11 @@ export function createServer(options: ServerOptions = {}) {
       return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'ws-ticket 服务未初始化' }, 503);
     }
 
-    const body = await parseJson<{ profileId?: string; webLinkToken?: string }>(c);
+    const body = await parseJson<{ profileId?: string }>(c);
     const profileId = body?.profileId?.trim();
-    const webLinkTokenFromBody = body?.webLinkToken?.trim() ?? '';
-    const webLinkTokenFromHeader = c.req.header('x-mytermux-web-link-token')?.trim() ?? '';
 
     if (!profileId) {
       return c.json({ error: 'INVALID_INPUT', message: 'profileId 不能为空' }, 400);
-    }
-
-    if (options.webLinkToken) {
-      const suppliedToken = webLinkTokenFromHeader || webLinkTokenFromBody;
-      if (suppliedToken !== options.webLinkToken) {
-        return c.json({ error: 'UNAUTHORIZED', message: 'MYTERMUX_WEB_LINK_TOKEN 无效' }, 401);
-      }
     }
 
     const profile = storage.getDaemonProfile(profileId);
@@ -328,17 +317,15 @@ export function createServer(options: ServerOptions = {}) {
   return app;
 }
 
-function createRequireManagementAccessMiddleware(webLinkToken: string | undefined): MiddlewareHandler {
-  if (!webLinkToken) {
-    return async (_c, next) => {
-      await next();
-    };
-  }
-
+function createRequireManagementAccessMiddleware(webAuthStorage: WebAuthStorage | undefined): MiddlewareHandler {
   return async (c, next) => {
-    const token = c.req.header('x-mytermux-web-link-token')?.trim();
-    if (!token || token !== webLinkToken) {
-      return c.json({ error: 'UNAUTHORIZED', message: 'MYTERMUX_WEB_LINK_TOKEN 无效' }, 401);
+    if (!webAuthStorage) {
+      return c.json({ error: 'SERVICE_UNAVAILABLE', message: 'Web 认证服务未初始化' }, 503);
+    }
+    const sessionId = getCookie(c, WEB_SESSION_COOKIE_NAME);
+    const session = webAuthStorage.getSessionById(sessionId);
+    if (!session.authenticated) {
+      return c.json({ error: 'UNAUTHORIZED', message: '请先登录' }, 401);
     }
     await next();
   };

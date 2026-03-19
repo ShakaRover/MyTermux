@@ -27,8 +27,7 @@ export interface ConnectionStoreState {
   keyPair: KeyPair | null;
   sharedKey: CryptoKey | null;
   ws: WebSocket | null;
-  relayUrl: string;
-  webLinkToken: string | null;
+  serverWsUrl: string;
   activeProfile: DaemonProfile | null;
   appMessageHandler: AppMessageHandler | null;
 }
@@ -42,26 +41,18 @@ export interface ConnectionStoreActions {
   setKeyPair: (keyPair: KeyPair | null) => void;
   setSharedKey: (sharedKey: CryptoKey | null) => void;
   setWs: (ws: WebSocket | null) => void;
-  setRelayUrl: (url: string) => void;
-  setWebLinkToken: (token: string | null) => void;
+  setServerWsUrl: (url: string) => void;
   setActiveProfile: (profile: DaemonProfile | null) => void;
   setAppMessageHandler: (handler: AppMessageHandler | null) => void;
   disconnect: () => void;
   reset: () => void;
 }
 
-function getDefaultRelayUrl(): string {
+function getDefaultServerWsUrl(): string {
   if (typeof window === 'undefined') {
     return 'ws://127.0.0.1:62200/ws';
   }
-
-  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${scheme}://${window.location.host}/ws`;
-}
-
-function getDefaultWebLinkToken(): string | null {
-  const fromEnv = import.meta.env.VITE_MYTERMUX_WEB_LINK_TOKEN?.trim();
-  return fromEnv || null;
+  return '/ws';
 }
 
 const initialState: ConnectionStoreState = {
@@ -72,8 +63,7 @@ const initialState: ConnectionStoreState = {
   keyPair: null,
   sharedKey: null,
   ws: null,
-  relayUrl: import.meta.env.VITE_SERVER_URL || import.meta.env.VITE_RELAY_URL || getDefaultRelayUrl(),
-  webLinkToken: getDefaultWebLinkToken(),
+  serverWsUrl: import.meta.env.VITE_SERVER_URL || getDefaultServerWsUrl(),
   activeProfile: null,
   appMessageHandler: null,
 };
@@ -89,8 +79,7 @@ export const useConnectionStore = create<ConnectionStoreState & ConnectionStoreA
     setKeyPair: (keyPair) => set({ keyPair }),
     setSharedKey: (sharedKey) => set({ sharedKey }),
     setWs: (ws) => set({ ws }),
-    setRelayUrl: (relayUrl) => set({ relayUrl }),
-    setWebLinkToken: (webLinkToken) => set({ webLinkToken }),
+    setServerWsUrl: (serverWsUrl) => set({ serverWsUrl }),
     setActiveProfile: (activeProfile) => set({ activeProfile }),
     setAppMessageHandler: (appMessageHandler) => set({ appMessageHandler }),
 

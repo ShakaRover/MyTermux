@@ -7,11 +7,10 @@ MyTermux 协议分为两层：
 1. 传输层（Server 可见）：设备注册、token 认证、路由
 2. 应用层（E2E 加密）：终端会话管理与交互
 
-说明：Web 登录改为服务端 `web.db` 持久化；Web 本地数据库仅保存偏好配置（快捷键、Server 地址等）。
+说明：Web 登录改为服务端 `web.db` 持久化；Web 本地数据库仅保存偏好配置（快捷键等）。
 
 ## 0. Token 定义
 
-- `MYTERMUX_WEB_LINK_TOKEN`：Web 访问 Server 管理 API 与 ws-ticket 的鉴权 token（Server 配置）
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Server 的链路授权 token（Server 配置）
 - `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token（Daemon 配置，存储在 `daemon.db`）
 
@@ -82,11 +81,7 @@ MyTermux 协议分为两层：
 
 ## 2. Server HTTP API（实现包：relay）
 
-当 Server 配置了 `MYTERMUX_WEB_LINK_TOKEN` 时，以下管理 API 必须带请求头：
-
-```http
-x-mytermux-web-link-token: <token>
-```
+以下管理 API 需要先完成 Web 登录，并携带有效 Cookie 会话。
 
 ### 2.1 Daemon 管理
 
@@ -153,7 +148,6 @@ x-mytermux-web-link-token: <token>
 #### `POST /api/ws-ticket`
 
 - 请求体必须带 `profileId`
-- 当开启 `MYTERMUX_WEB_LINK_TOKEN` 时，需通过请求头 `x-mytermux-web-link-token` 或请求体 `webLinkToken` 提供一致 token
 
 请求：
 

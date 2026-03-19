@@ -7,7 +7,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl';
 const enableHttps = process.env.VITE_HTTPS === 'true';
 
 // Server 地址（用于 /api 与 /ws 代理）
-const relayTarget = process.env.VITE_SERVER_URL || process.env.VITE_RELAY_URL || 'ws://127.0.0.1:62200/ws';
+const serverTarget = process.env.VITE_SERVER_URL || 'ws://127.0.0.1:62200/ws';
 
 // 从 ws(s)://host:port/path 中提取 http(s)://host:port
 function extractProxyTarget(wsUrl: string): string {
@@ -29,19 +29,19 @@ export default defineConfig({
     // 支持通过环境变量配置 host 和 port
     host: process.env.VITE_HOST || '127.0.0.1',
     port: Number(process.env.VITE_PORT) || 62100,
-    // 始终代理 /ws 与 /api，保证本地开发直连 Relay
+    // 始终代理 /ws 与 /api，保证本地开发直连 Server
     proxy: {
       '/ws': {
-        target: extractProxyTarget(relayTarget),
+        target: extractProxyTarget(serverTarget),
         ws: true,
         changeOrigin: true,
       },
       '/api': {
-        target: extractProxyTarget(relayTarget),
+        target: extractProxyTarget(serverTarget),
         changeOrigin: true,
       },
       '/health': {
-        target: extractProxyTarget(relayTarget),
+        target: extractProxyTarget(serverTarget),
         changeOrigin: true,
       },
     },

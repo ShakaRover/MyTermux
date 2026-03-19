@@ -43,15 +43,14 @@ pnpm start:local:test
 4. 关闭浏览器后重新打开，使用新账号密码应仍可登录（验证 `web.db` 持久化）
 5. 完成账号初始化后，在 `/daemons` 验证在线 daemon 自动生成 profile
 6. 验证在线 profile 可编辑，离线 profile 可手动删除（无新增入口）
-7. 验证可在 Web 端保存 Server 地址与 `MYTERMUX_WEB_LINK_TOKEN` 配置
-8. 点击“连接”进入 `/sessions`
+7. 点击“连接”进入 `/sessions`
 
-### 2.3 Server 鉴权验证（开启 `MYTERMUX_WEB_LINK_TOKEN` 时）
+### 2.3 Server 鉴权验证（基于登录会话）
 
-1. 不带 `x-mytermux-web-link-token` 请求 `/api/daemons`，应返回 401
-2. 带错误 token 请求 `/api/daemons`，应返回 401
-3. 带正确 token 请求 `/api/daemons`，应返回 200
-4. `POST /api/ws-ticket` 带错误 token 应返回 401，正确 token 返回 200
+1. 未登录直接请求 `/api/daemons`，应返回 401
+2. 完成 `/api/web-auth/login` 后请求 `/api/daemons`，应返回 200
+3. 未登录直接 `POST /api/ws-ticket`，应返回 401
+4. 登录后 `POST /api/ws-ticket`，应返回 200
 
 ### 2.4 终端会话
 
@@ -72,7 +71,7 @@ pnpm start:local:test
 ## 3. 协议与命名扫描
 
 ```bash
-rg -n --glob '!node_modules' 'token_auth|token_ack|mytermux-|ws-ticket|x-mytermux-web-link-token'
+rg -n --glob '!node_modules' 'token_auth|token_ack|mytermux-|ws-ticket|MYTERMUX_DAEMON_LINK_TOKEN'
 ```
 
 ## 4. 验收清单
@@ -81,7 +80,7 @@ rg -n --glob '!node_modules' 'token_auth|token_ack|mytermux-|ws-ticket|x-mytermu
 - [ ] 测试环境全程使用无证书模型（HTTP + WS）
 - [ ] Web 登录走服务端 `/api/web-auth/*`，账号会话写入 `web.db`
 - [ ] Web 登录后可查看在线 daemon 与 profile 并连接
-- [ ] `MYTERMUX_WEB_LINK_TOKEN` 开启时，缺失或错误 token 会拒绝管理 API 与 ws-ticket
+- [ ] 未登录会拒绝管理 API 与 ws-ticket
 - [ ] `MYTERMUX_DAEMON_LINK_TOKEN` 开启时，daemon 链接会被校验
 - [ ] ws-ticket 过期/复用会被拒绝
 - [ ] 会话列表显示 PID

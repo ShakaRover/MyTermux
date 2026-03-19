@@ -15,7 +15,7 @@
     "status": "node dist/index.js status",
     "token": "node dist/index.js token",
     "token:reset": "node dist/index.js token --reset",
-    "relay-token": "node dist/index.js relay-token",
+    "server-token": "node dist/index.js server-token",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

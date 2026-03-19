@@ -5,8 +5,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "mytermux-server": "./dist/cli.js",
-    "mytermux-relay": "./dist/cli.js"
+    "mytermux-server": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

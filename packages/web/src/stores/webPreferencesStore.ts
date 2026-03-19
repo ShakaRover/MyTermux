@@ -13,8 +13,6 @@ export interface WebPreferencesActions {
   savePreferences: (
     shortcuts: WebShortcut[],
     commonChars: string[],
-    relayUrl: string | null,
-    webLinkToken: string | null,
   ) => Promise<void>;
   setLocalPreferences: (preferences: WebPreferences) => void;
 }
@@ -38,10 +36,10 @@ export const useWebPreferencesStore = create<WebPreferencesState & WebPreference
     }
   },
 
-  savePreferences: async (shortcuts, commonChars, relayUrl, webLinkToken) => {
+  savePreferences: async (shortcuts, commonChars) => {
     set({ isLoading: true, error: null });
     try {
-      const preferences = await updateWebPreferences(shortcuts, commonChars, relayUrl, webLinkToken);
+      const preferences = await updateWebPreferences(shortcuts, commonChars);
       set({ preferences, isLoading: false, error: null });
     } catch (error) {
       set({

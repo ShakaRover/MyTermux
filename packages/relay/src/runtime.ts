@@ -8,7 +8,7 @@ import { createServer } from './server.js';
 import { RelayStorage } from './storage/index.js';
 import { WebAuthStorage } from './web-auth-storage.js';
 
-/** Relay 运行时组件 */
+/** Server 运行时组件 */
 export interface RelayRuntime {
   deviceRegistry: DeviceRegistry;
   messageRouter: MessageRouter;
@@ -19,18 +19,17 @@ export interface RelayRuntime {
   wsTicketService: WsTicketService;
 }
 
-/** 初始化 Relay 全量运行时组件 */
+/** 初始化 Server 全量运行时组件 */
 export function initializeRelayRuntime(): RelayRuntime {
-  const dbPath = process.env['SERVER_DB_PATH'] || process.env['RELAY_DB_PATH'] || path.join(os.homedir(), '.mytermux', 'relay.db');
+  const dbPath = process.env['SERVER_DB_PATH'] || path.join(os.homedir(), '.mytermux', 'relay.db');
   const webDbPath = process.env['WEB_DB_PATH'] || path.join(os.homedir(), '.mytermux', 'web.db');
-  const masterKey = process.env['SERVER_MASTER_KEY'] || process.env['RELAY_WEB_MASTER_KEY'] || 'mytermux-dev-master-key';
-  const webLinkToken = process.env['MYTERMUX_WEB_LINK_TOKEN']?.trim() || undefined;
+  const masterKey = process.env['SERVER_MASTER_KEY'] || 'mytermux-dev-master-key';
   const daemonLinkToken = process.env['MYTERMUX_DAEMON_LINK_TOKEN']?.trim() || undefined;
   const webAdminUsername = process.env['WEB_ADMIN_USERNAME']?.trim() || undefined;
   const webAdminPassword = process.env['WEB_ADMIN_PASSWORD'] || undefined;
 
-  if (!process.env['SERVER_MASTER_KEY'] && !process.env['RELAY_WEB_MASTER_KEY']) {
-    console.warn('[Server] 未设置 SERVER_MASTER_KEY/RELAY_WEB_MASTER_KEY，当前使用开发默认值，请勿用于生产环境');
+  if (!process.env['SERVER_MASTER_KEY']) {
+    console.warn('[Server] 未设置 SERVER_MASTER_KEY，当前使用开发默认值，请勿用于生产环境');
   }
 
   const storage = new RelayStorage(dbPath, masterKey);
@@ -53,7 +52,6 @@ export function initializeRelayRuntime(): RelayRuntime {
     storage,
     webAuthStorage,
     wsTicketService,
-    ...(webLinkToken ? { webLinkToken } : {}),
   });
 
   return {

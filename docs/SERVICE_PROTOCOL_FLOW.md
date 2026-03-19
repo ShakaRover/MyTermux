@@ -1,6 +1,6 @@
 # MyTermux 服务协议流转图
 
-本文聚焦 Server（兼容旧称 Relay）/ Web / Daemon 的关键协议链路，便于排查认证与路由问题。  
+本文聚焦 Server / Web / Daemon 的关键协议链路，便于排查认证与路由问题。  
 部署约束：本地/测试统一无证书（HTTP + WS）；生产必须走 Nginx 反向代理并启用证书（HTTPS + WSS）。  
 默认地址：Web Client `127.0.0.1:62100`，Server `127.0.0.1:62200`，Daemon 本地状态监听 `127.0.0.1:62300`。
 
@@ -19,7 +19,7 @@ flowchart LR
   W <-->|本地偏好| WB
   W -->|/api/web-auth/*| R
   R <-->|账号/会话| WA
-  W -->|管理 API + x-mytermux-web-link-token| R
+  W -->|管理 API + Cookie 会话| R
   R <-->|profile 读写| RB
   D -->|register + daemonLinkToken| R
   D -->|daemonToken| R
@@ -46,7 +46,7 @@ sequenceDiagram
   WA-->>R: 登录通过
   R-->>W: Set-Cookie + 会话信息
 
-  W->>R: GET /api/daemons + x-mytermux-web-link-token
+  W->>R: GET /api/daemons + Cookie 会话
   R->>RB: 同步在线 daemon 与 profile
   RB-->>R: profiles
   R-->>W: onlineDaemons + profiles
@@ -57,7 +57,7 @@ sequenceDiagram
   R-->>W: profile
 
   W->>R: POST /api/ws-ticket(profileId)
-  R->>R: 校验 MYTERMUX_WEB_LINK_TOKEN(开启时)
+  R->>R: 校验登录会话
   R->>RB: 读取 profile + 解密 daemon token
   RB-->>R: daemonToken/daemonId
   R-->>W: ticket(60s, 一次性)
@@ -98,7 +98,7 @@ sequenceDiagram
 ## 4. 关键约束（排障优先看）
 
 - Web 登录通过 `/api/web-auth/*`，账号与会话写入 `web.db`（不写浏览器本地账号）。
-- 当 Server 开启 `MYTERMUX_WEB_LINK_TOKEN` 时，管理 API 与 ws-ticket 都需要提供正确 token。
+- 管理 API 与 ws-ticket 必须依赖有效 Web 登录会话。
 - Client 连接 `/ws` 前必须先拿 `ws-ticket`，ticket 仅可消费一次，默认 60 秒过期。
 - `token_auth` 仅允许 `deviceType=client`。
 - `message/heartbeat` 的 `from` 必须与 ws 绑定 `deviceId` 一致，否则会被拒绝并断开。

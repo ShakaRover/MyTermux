@@ -57,9 +57,9 @@ describe('auth-manager 持久化接口', () => {
     const manager = new authModule.AuthManager();
     await manager.initialize();
 
-    await authModule.setDaemonLinkToken('relay-token-123');
+    await authModule.setDaemonLinkToken('server-link-token-123');
     const saved = await authModule.readDaemonLinkToken();
-    expect(saved).toBe('relay-token-123');
+    expect(saved).toBe('server-link-token-123');
 
     await authModule.clearDaemonLinkToken();
     const cleared = await authModule.readDaemonLinkToken();

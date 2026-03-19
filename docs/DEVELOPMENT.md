@@ -20,14 +20,13 @@ MyTermux 当前职责边界：
 ## 3. 核心链路
 
 1. Web 调用 `/api/web-auth/*` 登录（默认 `admin` / `mytermux`，首次登录强制改密）
-2. Web 读取本地偏好配置，调用 Server 管理 API（必要时携带 `x-mytermux-web-link-token`）
+2. Web 读取本地偏好配置，调用 Server 管理 API（依赖登录 Cookie 会话）
 3. Server 按在线 daemon 自动生成 profile，并签发 ws-ticket
 4. Web 用 ws-ticket 连接 Server，Server 路由到 Daemon
 5. 应用层会话消息走 E2E 加密
 
 ## 4. Token 定义
 
-- `MYTERMUX_WEB_LINK_TOKEN`：Web -> Server 管理 API 与 ws-ticket 鉴权（Server 配置）
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon -> Server 链路鉴权（Server 配置）
 - `MYTERMUX_DAEMON_TOKEN`：Web 控制 Daemon 的业务授权 token（Daemon 配置）
 
@@ -49,8 +48,7 @@ packages/
 pnpm install
 pnpm turbo run build
 cp .env.example .env
-# 编辑 .env（至少填写 MYTERMUX_WEB_LINK_TOKEN / MYTERMUX_DAEMON_LINK_TOKEN / SERVER_MASTER_KEY）
-# 兼容旧变量：RELAY_WEB_MASTER_KEY
+# 编辑 .env（至少填写 MYTERMUX_DAEMON_LINK_TOKEN / SERVER_MASTER_KEY）
 # 可选：WEB_ADMIN_USERNAME / WEB_ADMIN_PASSWORD（仅首次初始化 web.db 时生效）
 ```
 
@@ -86,7 +84,6 @@ pnpm --filter @mytermux/daemon token -- --reset
 pnpm --filter @mytermux/daemon server-token
 pnpm --filter @mytermux/daemon server-token -- --set '<daemon-link-token>'
 pnpm --filter @mytermux/daemon server-token -- --clear
-# 兼容旧命令：relay-token
 ```
 
 ## 8. 调试建议
@@ -96,7 +93,7 @@ pnpm --filter @mytermux/daemon server-token -- --clear
   - 检查 `~/.mytermux/web.db` 是否可读写
   - 默认账号为 `admin` / `mytermux`，首次登录必须先改账号密码
 - Server 管理 API 401：
-  - 优先检查 `MYTERMUX_WEB_LINK_TOKEN` 与 `x-mytermux-web-link-token` 是否一致
+  - 先检查是否已登录，且 Cookie 会话未过期
 - Daemon token 问题：
   - 检查 `~/.mytermux/daemon.db`
   - 必要时执行 `mytermux token --reset` 重置 token（需先停止 daemon）

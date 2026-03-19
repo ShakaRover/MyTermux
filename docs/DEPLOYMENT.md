@@ -35,18 +35,15 @@ pnpm turbo run build
 
 ### 4.1 必要环境变量
 
-- `MYTERMUX_WEB_LINK_TOKEN`：Web 访问 Server 管理 API 与 ws-ticket 的鉴权 token（推荐开启）
 - `MYTERMUX_DAEMON_LINK_TOKEN`：Daemon 连接 Server 前置 token（推荐开启）
 - `SERVER_MASTER_KEY`：加密 daemon profile token 的主密钥（建议 32 字节随机）
 - `SERVER_DB_PATH`：SQLite 文件路径（默认 `~/.mytermux/relay.db`）
-- 兼容旧变量：`RELAY_WEB_MASTER_KEY` / `RELAY_DB_PATH`
 - `WEB_DB_PATH`：Web 认证数据库路径（默认 `~/.mytermux/web.db`）
 - `WEB_ADMIN_USERNAME` / `WEB_ADMIN_PASSWORD`：首次初始化管理员账号（仅 `web.db` 首次创建时生效）
 
 示例：
 
 ```bash
-export MYTERMUX_WEB_LINK_TOKEN='<web-link-token>'
 export MYTERMUX_DAEMON_LINK_TOKEN='<daemon-link-token>'
 export SERVER_MASTER_KEY='<32-byte-random-secret>'
 export SERVER_DB_PATH=/var/lib/mytermux/relay.db
@@ -87,7 +84,6 @@ pnpm --filter @mytermux/daemon start -- --server ws://<server-host>:62200 --daem
 # 方式 2：先持久化到 daemon.db（后续 start 可不再传 --daemon-link-token）
 pnpm --filter @mytermux/daemon server-token -- --set '<daemon-link-token>'
 pnpm --filter @mytermux/daemon start -- --server ws://<server-host>:62200
-# 兼容旧命令：relay-token / --relay
 ```
 
 查看 `MYTERMUX_DAEMON_TOKEN`：
@@ -104,9 +100,6 @@ Daemon 默认本地监听：`http://127.0.0.1:62300`
 ## 6. Web 部署
 
 ```bash
-# 仅当 Server 开启 MYTERMUX_WEB_LINK_TOKEN 时需要
-export VITE_MYTERMUX_WEB_LINK_TOKEN='<web-link-token>'
-
 pnpm --filter @mytermux/web build
 ```
 
@@ -166,7 +159,6 @@ Restart=always
 RestartSec=3
 User=mytermux
 Environment=NODE_ENV=production
-Environment=MYTERMUX_WEB_LINK_TOKEN=<web-link-token>
 Environment=MYTERMUX_DAEMON_LINK_TOKEN=<daemon-link-token>
 Environment=SERVER_MASTER_KEY=<master-key>
 Environment=SERVER_DB_PATH=/var/lib/mytermux/relay.db
@@ -205,7 +197,7 @@ WantedBy=multi-user.target
 - 生产必须由 Nginx 提供 TLS，外部流量统一走 HTTPS/WSS
 - Web 默认账号 `admin` / `mytermux` 仅用于初始化，首次登录必须改密
 - `SERVER_MASTER_KEY` 必须高强度随机并妥善保管
-- `MYTERMUX_WEB_LINK_TOKEN` / `MYTERMUX_DAEMON_LINK_TOKEN` 仅通过可信渠道分发
+- `MYTERMUX_DAEMON_LINK_TOKEN` 仅通过可信渠道分发
 - `MYTERMUX_DAEMON_TOKEN` 仅通过可信渠道分发，并定期轮换
 
 ## 10. 历史数据说明

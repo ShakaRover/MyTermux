@@ -132,7 +132,5 @@ export interface WebShortcut {
 export interface WebPreferences {
   shortcuts: WebShortcut[];
   commonChars: string[];
-  relayUrl: string | null;
-  webLinkToken: string | null;
   updatedAt: number;
 }

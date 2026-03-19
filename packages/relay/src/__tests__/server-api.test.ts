@@ -6,17 +6,15 @@ import { DeviceRegistry } from '../device-registry';
 import { createServer } from '../server';
 import { WsTicketService } from '../auth/ws-ticket';
 import { RelayStorage } from '../storage';
+import { WebAuthStorage } from '../web-auth-storage';
 
 interface TestContext {
   tmpDir: string;
   deviceRegistry: DeviceRegistry;
   storage: RelayStorage;
+  webAuthStorage: WebAuthStorage;
   wsTicketService: WsTicketService;
   app: ReturnType<typeof createServer>;
-}
-
-interface CreateTestContextOptions {
-  webLinkToken?: string;
 }
 
 const contexts: TestContext[] = [];
@@ -33,9 +31,10 @@ afterEach(() => {
   }
 });
 
-function createTestContext(options: CreateTestContextOptions = {}): TestContext {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mytermux-relay-api-'));
+function createTestContext(): TestContext {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mytermux-server-api-'));
   const storage = new RelayStorage(path.join(tmpDir, 'relay.db'), 'test-master-key');
+  const webAuthStorage = new WebAuthStorage(path.join(tmpDir, 'web.db'));
 
   const deviceRegistry = new DeviceRegistry();
   const wsTicketService = new WsTicketService();
@@ -43,13 +42,14 @@ function createTestContext(options: CreateTestContextOptions = {}): TestContext 
   const app = createServer({
     deviceRegistry,
     storage,
+    webAuthStorage,
     wsTicketService,
-    ...(options.webLinkToken ? { webLinkToken: options.webLinkToken } : {}),
   });
 
   const context: TestContext = {
     tmpDir,
     storage,
+    webAuthStorage,
     deviceRegistry,
     wsTicketService,
     app,
@@ -66,18 +66,33 @@ function createMockWs() {
   } as unknown as import('ws').WebSocket;
 }
 
-function managementHeaders(token?: string): Record<string, string> {
-  if (!token) {
+async function managementHeaders(app: ReturnType<typeof createServer>): Promise<Record<string, string>> {
+  const loginResponse = await app.request('/api/web-auth/login', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      username: 'admin',
+      password: 'mytermux',
+    }),
+  });
+  expect(loginResponse.status).toBe(200);
+
+  const rawCookie = loginResponse.headers.get('set-cookie');
+  expect(rawCookie).toBeTruthy();
+  if (!rawCookie) {
     return {};
   }
-  return {
-    'x-mytermux-web-link-token': token,
-  };
+  const cookie = rawCookie.split(';')[0]?.trim() || '';
+  expect(cookie).toContain('mytermux_web_session=');
+  return { cookie };
 }
 
 describe('Relay API integration', () => {
   it('should complete auto-profile -> patch -> ws-ticket flow', async () => {
     const { app, wsTicketService, deviceRegistry } = createTestContext();
+    const headers = await managementHeaders(app);
     deviceRegistry.registerDevice(
       createMockWs(),
       'daemon-1',
@@ -86,7 +101,7 @@ describe('Relay API integration', () => {
       'mytermux-1234567890abcdef1234567890abcdef',
     );
 
-    const daemonsResponse = await app.request('/api/daemons');
+    const daemonsResponse = await app.request('/api/daemons', { headers });
     expect(daemonsResponse.status).toBe(200);
     const daemonsBody = await daemonsResponse.json() as {
       profiles: Array<{ id: string; daemonId?: string | null }>;
@@ -97,6 +112,7 @@ describe('Relay API integration', () => {
     const patchResponse = await app.request(`/api/daemon-profiles/${profile!.id}`, {
       method: 'PATCH',
       headers: {
+        ...headers,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -110,6 +126,7 @@ describe('Relay API integration', () => {
     const wsTicketResponse = await app.request('/api/ws-ticket', {
       method: 'POST',
       headers: {
+        ...headers,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -126,14 +143,15 @@ describe('Relay API integration', () => {
     expect(wsTicketService.consume(wsTicketBody.ticket)).toBeNull();
   });
 
-  it('should expose daemon apis without web session', async () => {
+  it('should reject daemon apis without web session', async () => {
     const { app } = createTestContext();
     const response = await app.request('/api/daemons');
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(401);
   });
 
-  it('should auto create profile for online daemon in /api/daemons', async () => {
+  it('should allow daemon apis after web login session established', async () => {
     const { app, deviceRegistry } = createTestContext();
+    const headers = await managementHeaders(app);
 
     deviceRegistry.registerDevice(
       createMockWs(),
@@ -143,7 +161,7 @@ describe('Relay API integration', () => {
       'mytermux-aabbccddeeff00112233445566778899',
     );
 
-    const daemonsResponse = await app.request('/api/daemons');
+    const daemonsResponse = await app.request('/api/daemons', { headers });
     expect(daemonsResponse.status).toBe(200);
 
     const body = await daemonsResponse.json() as {
@@ -157,6 +175,7 @@ describe('Relay API integration', () => {
 
   it('should keep profile when daemon goes offline until manual delete', async () => {
     const { app, deviceRegistry, storage } = createTestContext();
+    const headers = await managementHeaders(app);
 
     deviceRegistry.registerDevice(
       createMockWs(),
@@ -166,7 +185,7 @@ describe('Relay API integration', () => {
       'mytermux-1029384756abcdef0011223344556677',
     );
 
-    const firstResponse = await app.request('/api/daemons');
+    const firstResponse = await app.request('/api/daemons', { headers });
     expect(firstResponse.status).toBe(200);
     const firstBody = await firstResponse.json() as { profiles: Array<{ id: string; daemonId?: string | null }> };
     const profile = firstBody.profiles.find((item) => item.daemonId === 'daemon-offline-cleanup');
@@ -178,7 +197,7 @@ describe('Relay API integration', () => {
       deviceRegistry.unregisterDevice('daemon-offline-cleanup');
     }
 
-    const secondResponse = await app.request('/api/daemons');
+    const secondResponse = await app.request('/api/daemons', { headers });
     expect(secondResponse.status).toBe(200);
     const secondBody = await secondResponse.json() as { profiles: Array<{ id: string; daemonId?: string | null; online?: boolean }> };
     const retained = secondBody.profiles.find((item) => item.id === profile!.id);
@@ -188,6 +207,7 @@ describe('Relay API integration', () => {
 
     const deleteResponse = await app.request(`/api/daemon-profiles/${profile!.id}`, {
       method: 'DELETE',
+      headers,
     });
     expect(deleteResponse.status).toBe(200);
     expect(storage.getDaemonProfile(profile!.id)).toBeNull();
@@ -195,6 +215,7 @@ describe('Relay API integration', () => {
 
   it('should disable create/bind apis and only allow deleting offline profile', async () => {
     const { app, deviceRegistry } = createTestContext();
+    const headers = await managementHeaders(app);
 
     deviceRegistry.registerDevice(
       createMockWs(),
@@ -204,7 +225,7 @@ describe('Relay API integration', () => {
       'mytermux-5566778899aabbccddeeff0011223344',
     );
 
-    const daemonsResponse = await app.request('/api/daemons');
+    const daemonsResponse = await app.request('/api/daemons', { headers });
     expect(daemonsResponse.status).toBe(200);
     const body = await daemonsResponse.json() as { profiles: Array<{ id: string; daemonId?: string | null }> };
     const profile = body.profiles.find((item) => item.daemonId === 'daemon-disabled-api');
@@ -212,20 +233,27 @@ describe('Relay API integration', () => {
 
     const createResponse = await app.request('/api/daemon-profiles', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        ...headers,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ name: 'manual' }),
     });
     expect(createResponse.status).toBe(405);
 
     const bindResponse = await app.request(`/api/daemon-profiles/${profile!.id}/bind`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        ...headers,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({ daemonId: 'another-daemon' }),
     });
     expect(bindResponse.status).toBe(405);
 
     const deleteOnlineResponse = await app.request(`/api/daemon-profiles/${profile!.id}`, {
       method: 'DELETE',
+      headers,
     });
     expect(deleteOnlineResponse.status).toBe(409);
 
@@ -237,12 +265,14 @@ describe('Relay API integration', () => {
 
     const deleteOfflineResponse = await app.request(`/api/daemon-profiles/${profile!.id}`, {
       method: 'DELETE',
+      headers,
     });
     expect(deleteOfflineResponse.status).toBe(200);
   });
 
   it('should reject daemonId updates in patch api', async () => {
     const { app, deviceRegistry } = createTestContext();
+    const headers = await managementHeaders(app);
     deviceRegistry.registerDevice(
       createMockWs(),
       'daemon-immutable-id',
@@ -251,7 +281,7 @@ describe('Relay API integration', () => {
       'mytermux-99887766554433221100ffeeddccbbaa',
     );
 
-    const daemonsResponse = await app.request('/api/daemons');
+    const daemonsResponse = await app.request('/api/daemons', { headers });
     expect(daemonsResponse.status).toBe(200);
     const body = await daemonsResponse.json() as { profiles: Array<{ id: string; daemonId?: string | null }> };
     const profile = body.profiles.find((item) => item.daemonId === 'daemon-immutable-id');
@@ -260,6 +290,7 @@ describe('Relay API integration', () => {
     const patchResponse = await app.request(`/api/daemon-profiles/${profile!.id}`, {
       method: 'PATCH',
       headers: {
+        ...headers,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -272,9 +303,8 @@ describe('Relay API integration', () => {
     expect(patchBody.error).toBe('IMMUTABLE_FIELD');
   });
 
-  it('should require MYTERMUX_WEB_LINK_TOKEN for management and ws-ticket when configured', async () => {
-    const webLinkToken = 'web-link-secret-token';
-    const { app, deviceRegistry } = createTestContext({ webLinkToken });
+  it('should require web session for management and ws-ticket endpoints', async () => {
+    const { app, deviceRegistry } = createTestContext();
     deviceRegistry.registerDevice(
       createMockWs(),
       'daemon-link-token-check',
@@ -286,9 +316,8 @@ describe('Relay API integration', () => {
     const deniedDaemonsResponse = await app.request('/api/daemons');
     expect(deniedDaemonsResponse.status).toBe(401);
 
-    const daemonsResponse = await app.request('/api/daemons', {
-      headers: managementHeaders(webLinkToken),
-    });
+    const headers = await managementHeaders(app);
+    const daemonsResponse = await app.request('/api/daemons', { headers });
     expect(daemonsResponse.status).toBe(200);
     const body = await daemonsResponse.json() as { profiles: Array<{ id: string; daemonId?: string | null }> };
     const profile = body.profiles.find((item) => item.daemonId === 'daemon-link-token-check');
@@ -308,7 +337,7 @@ describe('Relay API integration', () => {
     const patchWithToken = await app.request(`/api/daemon-profiles/${profile!.id}`, {
       method: 'PATCH',
       headers: {
-        ...managementHeaders(webLinkToken),
+        ...headers,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -318,22 +347,10 @@ describe('Relay API integration', () => {
     });
     expect(patchWithToken.status).toBe(200);
 
-    const badTokenResponse = await app.request('/api/ws-ticket', {
-      method: 'POST',
-      headers: {
-        ...managementHeaders('wrong-token'),
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        profileId: profile!.id,
-      }),
-    });
-    expect(badTokenResponse.status).toBe(401);
-
     const wsTicketResponse = await app.request('/api/ws-ticket', {
       method: 'POST',
       headers: {
-        ...managementHeaders(webLinkToken),
+        ...headers,
         'content-type': 'application/json',
       },
       body: JSON.stringify({

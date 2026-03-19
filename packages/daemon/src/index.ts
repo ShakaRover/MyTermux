@@ -8,7 +8,6 @@
  * - mytermux status 查看状态
  * - mytermux token  查看/重置 MYTERMUX_DAEMON_TOKEN
  * - mytermux server-token 查看/设置 daemon -> Server 链路 token
- * - mytermux relay-token 兼容旧命令（会提示迁移）
  */
 
 import { Command } from 'commander';
@@ -148,18 +147,14 @@ async function resolveDaemonLinkToken(tokenFromCli?: string): Promise<string> {
 
 /**
  * 解析 daemon -> Server 地址
- * 优先级：--server > --relay(兼容) > 环境变量 > 默认值
+ * 优先级：--server > 环境变量 > 默认值
  */
-function resolveServerUrl(serverFromCli: string | undefined, relayFromCli: string | undefined): string {
+function resolveServerUrl(serverFromCli: string | undefined): string {
   const cliServer = serverFromCli?.trim();
   if (cliServer) {
     return cliServer;
   }
-  const cliRelay = relayFromCli?.trim();
-  if (cliRelay) {
-    return cliRelay;
-  }
-  return process.env['SERVER_URL'] || process.env['RELAY_URL'] || 'ws://127.0.0.1:62200';
+  return process.env['SERVER_URL'] || 'ws://127.0.0.1:62200';
 }
 
 // ============================================================================
@@ -179,15 +174,13 @@ program
 program
   .command('start')
   .description('启动守护进程')
-  .option('-s, --server <url>', 'Server 地址', process.env['SERVER_URL'] || process.env['RELAY_URL'] || 'ws://127.0.0.1:62200')
-  .option('-r, --relay <url>', '兼容旧参数，等价于 --server')
+  .option('-s, --server <url>', 'Server 地址', process.env['SERVER_URL'] || 'ws://127.0.0.1:62200')
   .option('--listen-host <host>', '本地状态监听地址', process.env['DAEMON_HOST'] || '127.0.0.1')
   .option('--listen-port <port>', '本地状态监听端口', process.env['DAEMON_PORT'] || '62300')
   .option('--daemon-link-token <token>', 'daemon 连接 Server 链路 token（优先级高于环境变量与 daemon.db）')
   .option('-f, --foreground', '前台运行（不作为守护进程）', false)
   .action(async (options: {
     server?: string;
-    relay?: string;
     foreground: boolean;
     daemonLinkToken?: string;
     listenHost: string;
@@ -200,10 +193,7 @@ program
       return;
     }
 
-    if (options.relay?.trim()) {
-      console.warn('[daemon] 参数 "--relay" 已弃用，请改用 "--server"');
-    }
-    const serverUrl = resolveServerUrl(options.server, options.relay);
+    const serverUrl = resolveServerUrl(options.server);
     const daemonLinkToken = await resolveDaemonLinkToken(options.daemonLinkToken);
 
     // 后台模式：fork 子进程并立即退出父进程
@@ -459,10 +449,7 @@ program
     }
   });
 
-async function handleDaemonLinkTokenCommand(
-  options: { set?: string; clear?: boolean },
-  commandName: 'server-token' | 'relay-token',
-): Promise<void> {
+async function handleDaemonLinkTokenCommand(options: { set?: string; clear?: boolean }): Promise<void> {
   try {
     const nextToken = options.set?.trim() || '';
     const shouldClear = !!options.clear;
@@ -494,7 +481,7 @@ async function handleDaemonLinkTokenCommand(
 
     console.log(`MYTERMUX_DAEMON_LINK_TOKEN: ${token}`);
   } catch (error) {
-    console.error(`${commandName} 操作失败:`, error instanceof Error ? error.message : error);
+    console.error('server-token 操作失败:', error instanceof Error ? error.message : error);
     process.exit(1);
   }
 }
@@ -508,20 +495,7 @@ program
   .option('-s, --set <token>', '设置新的 server token')
   .option('--clear', '清空已保存 server token', false)
   .action(async (options: { set?: string; clear?: boolean }) => {
-    await handleDaemonLinkTokenCommand(options, 'server-token');
-  });
-
-/**
- * relay-token 命令 - 兼容旧命令
- */
-program
-  .command('relay-token')
-  .description('兼容旧命令，等价于 server-token（会提示迁移）')
-  .option('-s, --set <token>', '设置新的 relay token')
-  .option('--clear', '清空已保存 relay token', false)
-  .action(async (options: { set?: string; clear?: boolean }) => {
-    console.warn('[daemon] 命令 "relay-token" 已弃用，请改用 "server-token"');
-    await handleDaemonLinkTokenCommand(options, 'relay-token');
+    await handleDaemonLinkTokenCommand(options);
   });
 
 program.parse();

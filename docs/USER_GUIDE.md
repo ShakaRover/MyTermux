@@ -4,7 +4,7 @@
 
 MyTermux 当前推荐流程：
 
-1. 启动 server（控制端 API 与中继，兼容旧称 relay）
+1. 启动 server（控制端 API 与中继）
 2. 启动 daemon（提供 `MYTERMUX_DAEMON_TOKEN`）
 3. 浏览器登录 Web 管理中心（服务端 `web.db` 登录）
 4. 在 Web 中编辑 daemon profile 配置
@@ -29,9 +29,8 @@ cp .env.example .env
 
 编辑 `.env`，至少填写：
 
-- `MYTERMUX_WEB_LINK_TOKEN`
 - `MYTERMUX_DAEMON_LINK_TOKEN`
-- `SERVER_MASTER_KEY`（兼容旧变量 `RELAY_WEB_MASTER_KEY`）
+- `SERVER_MASTER_KEY`
 - `WEB_ADMIN_USERNAME` / `WEB_ADMIN_PASSWORD`（可选，首次初始化管理员账号）
 
 ### 3.2 一键启动本地测试
@@ -61,8 +60,7 @@ pnpm start:local:test
 # 推荐
 bash ./scripts/server/start-fg.sh
 
-# 兼容旧路径（会提示弃用）
-bash ./scripts/relay/start-fg.sh
+# 其他服务
 bash ./scripts/daemon/start-fg.sh
 bash ./scripts/web/start-fg.sh
 ```
@@ -88,7 +86,6 @@ pnpm --filter @mytermux/daemon token -- --reset
 ```bash
 pnpm --filter @mytermux/daemon server-token -- --set '<daemon-link-token>'
 pnpm --filter @mytermux/daemon server-token -- --clear
-# 兼容旧命令：relay-token
 ```
 
 浏览器打开 `http://127.0.0.1:62100`，进入 `/login` 登录。
@@ -100,8 +97,7 @@ pnpm --filter @mytermux/daemon server-token -- --clear
 1. 在线 daemon 会自动生成默认 profile（`daemonId` 与 profile 一一对应）
 2. 在线 profile 支持编辑（名称、token、默认目录、默认命令）
 3. daemon 离线后 profile 会保留，可手动删除离线 profile
-4. 可在 Web 保存 Server WebSocket 地址与 `MYTERMUX_WEB_LINK_TOKEN`
-5. 点击“连接”进入 `/sessions`
+4. 点击“连接”进入 `/sessions`
 
 默认命令支持：
 
@@ -131,7 +127,6 @@ pnpm --filter @mytermux/daemon token -- --reset
 pnpm --filter @mytermux/daemon server-token
 pnpm --filter @mytermux/daemon server-token -- --set '<daemon-link-token>'
 pnpm --filter @mytermux/daemon server-token -- --clear
-# 兼容旧命令：relay-token
 
 # server（实现包仍为 @mytermux/relay）
 pnpm server:start:fg
@@ -148,7 +143,6 @@ pnpm daemon:token:get
 pnpm daemon:token:reset
 pnpm daemon:server-token:set -- '<daemon-link-token>'
 bash ./scripts/daemon/set-server-token.sh --clear
-# 兼容旧脚本：scripts/daemon/set-relay-token.sh
 ```
 
 ## 7. 本地数据目录
@@ -177,7 +171,7 @@ Web 本地数据：
 
 - 确认 profile 已配置有效 `MYTERMUX_DAEMON_TOKEN`
 - 在 `/daemons` 中确认 profile 对应 daemonId 与在线 daemon 一致
-- 若启用链路鉴权，确认 `MYTERMUX_WEB_LINK_TOKEN` 与 `MYTERMUX_DAEMON_LINK_TOKEN` 均一致
+- 若启用链路鉴权，确认 `MYTERMUX_DAEMON_LINK_TOKEN` 一致
 
 ### 8.3 终端无输出或频繁断开
 

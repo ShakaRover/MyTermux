@@ -39,10 +39,6 @@ export function DaemonHubPage() {
   const {
     state: connectionState,
     activeProfile,
-    relayUrl,
-    webLinkToken,
-    setRelayUrl,
-    setWebLinkToken,
   } = useConnectionStore();
   const { connectWithProfile, isConnecting } = useWebSocket();
 
@@ -66,8 +62,6 @@ export function DaemonHubPage() {
 
   const [shortcutDraft, setShortcutDraft] = useState<WebShortcut[]>([]);
   const [commonCharsDraft, setCommonCharsDraft] = useState('');
-  const [relayUrlDraft, setRelayUrlDraft] = useState('');
-  const [webLinkTokenDraft, setWebLinkTokenDraft] = useState('');
 
   const currentModeLabel = '编辑在线配置';
 
@@ -98,11 +92,7 @@ export function DaemonHubPage() {
 
     setShortcutDraft(preferences.shortcuts);
     setCommonCharsDraft(preferences.commonChars.join(', '));
-    setRelayUrlDraft(preferences.relayUrl ?? relayUrl);
-    setWebLinkTokenDraft(preferences.webLinkToken ?? webLinkToken ?? '');
-    setRelayUrl(preferences.relayUrl ?? relayUrl);
-    setWebLinkToken(preferences.webLinkToken ?? webLinkToken ?? null);
-  }, [preferences, relayUrl, setRelayUrl, setWebLinkToken, webLinkToken]);
+  }, [preferences]);
 
   const mapProfileToForm = useCallback((profile: DaemonProfile): ProfileFormState => ({
     name: profile.name,
@@ -242,30 +232,15 @@ export function DaemonHubPage() {
         .filter((item) => item.length > 0),
     ));
 
-    const normalizedRelayUrl = relayUrlDraft.trim() || null;
-    const normalizedWebLinkToken = webLinkTokenDraft.trim() || null;
-
     try {
-      await savePreferences(
-        shortcutDraft,
-        normalizedChars,
-        normalizedRelayUrl,
-        normalizedWebLinkToken,
-      );
-      setRelayUrl(normalizedRelayUrl || relayUrl);
-      setWebLinkToken(normalizedWebLinkToken);
+      await savePreferences(shortcutDraft, normalizedChars);
     } catch {
       // 错误已由 store 记录
     }
   }, [
     commonCharsDraft,
-    relayUrl,
-    relayUrlDraft,
     savePreferences,
-    setRelayUrl,
-    setWebLinkToken,
     shortcutDraft,
-    webLinkTokenDraft,
   ]);
 
   const handleLogout = useCallback(async () => {
@@ -513,46 +488,6 @@ export function DaemonHubPage() {
           </section>
 
           <section className="space-y-4">
-            <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-4 md:p-5">
-              <h2 className="text-lg font-semibold">Server 连接配置</h2>
-              <p className="mt-1 text-xs text-gray-500">
-                登录后可在这里配置 Web Client 使用的 Server（兼容旧称 Relay）地址与 ws-ticket 授权 token。
-              </p>
-
-              <div className="mt-4 space-y-3">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Server WebSocket 地址</label>
-                  <input
-                    type="text"
-                    value={relayUrlDraft}
-                    onChange={(event) => setRelayUrlDraft(event.target.value)}
-                    placeholder="例如: ws://127.0.0.1:62200/ws 或 /ws"
-                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-xs text-gray-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Server Web Link Token（可选）</label>
-                  <input
-                    type="text"
-                    value={webLinkTokenDraft}
-                    onChange={(event) => setWebLinkTokenDraft(event.target.value)}
-                    placeholder="留空表示不携带"
-                    className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-xs text-gray-100"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void handleSavePreferences()}
-                disabled={prefsLoading}
-                className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
-              >
-                {prefsLoading ? '保存中...' : '保存 Server 配置'}
-              </button>
-            </div>
-
             <div className="rounded-2xl border border-gray-800 bg-gray-900/70 p-4 md:p-5">
               <h2 className="text-lg font-semibold">Web 快捷键配置</h2>
               <p className="mt-1 text-xs text-gray-500">

@@ -66,20 +66,10 @@ function sanitizeCommonChars(input: unknown): string[] {
   return dedup.size > 0 ? Array.from(dedup) : DEFAULT_COMMON_CHARS;
 }
 
-function sanitizeOptionalString(value: unknown): string | null {
-  if (typeof value !== 'string') {
-    return null;
-  }
-  const normalized = value.trim();
-  return normalized ? normalized : null;
-}
-
 function defaultPreferences(): WebPreferences {
   return {
     shortcuts: DEFAULT_WEB_SHORTCUTS,
     commonChars: DEFAULT_COMMON_CHARS,
-    relayUrl: null,
-    webLinkToken: null,
     updatedAt: Date.now(),
   };
 }
@@ -95,8 +85,6 @@ export async function getLocalWebPreferences(): Promise<WebPreferences> {
   return {
     shortcuts: sanitizeShortcuts(raw.shortcuts),
     commonChars: sanitizeCommonChars(raw.commonChars),
-    relayUrl: sanitizeOptionalString(raw.relayUrl),
-    webLinkToken: sanitizeOptionalString(raw.webLinkToken),
     updatedAt: typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
       ? raw.updatedAt
       : Date.now(),
@@ -106,21 +94,12 @@ export async function getLocalWebPreferences(): Promise<WebPreferences> {
 export async function saveLocalWebPreferences(
   shortcuts: WebShortcut[],
   commonChars: string[],
-  relayUrl: string | null,
-  webLinkToken: string | null,
 ): Promise<WebPreferences> {
   const next: WebPreferences = {
     shortcuts: sanitizeShortcuts(shortcuts),
     commonChars: sanitizeCommonChars(commonChars),
-    relayUrl: sanitizeOptionalString(relayUrl),
-    webLinkToken: sanitizeOptionalString(webLinkToken),
     updatedAt: Date.now(),
   };
   await localDbSet(PREFERENCES_KEY, next);
   return next;
-}
-
-export async function getRelayWebLinkToken(): Promise<string | null> {
-  const preferences = await getLocalWebPreferences();
-  return preferences.webLinkToken;
 }

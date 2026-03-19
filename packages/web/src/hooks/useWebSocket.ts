@@ -165,7 +165,7 @@ export function useWebSocket(): UseWebSocketReturn {
 
     try {
       // 1) 先申请一次性 ws-ticket
-      const wsTicket = await requestWsTicket(profile.id, store.webLinkToken);
+      const wsTicket = await requestWsTicket(profile.id);
 
       // 2) 生成本地密钥对与 deviceId
       const keyPair = await initKeyPair();
@@ -174,7 +174,7 @@ export function useWebSocket(): UseWebSocketReturn {
       store.setDeviceId(deviceId);
 
       // 3) 建立 ws 连接（ticket 作为 query 参数）
-      const wsUrl = buildWsUrl(store.relayUrl, wsTicket.ticket);
+      const wsUrl = buildWsUrl(store.serverWsUrl, wsTicket.ticket);
       const socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
@@ -253,14 +253,14 @@ export function useWebSocket(): UseWebSocketReturn {
   };
 }
 
-export function buildWsUrl(relayUrl: string, ticket: string): string {
+export function buildWsUrl(serverWsUrl: string, ticket: string): string {
   const withTicket = (base: string): string => {
     const separator = base.includes('?') ? '&' : '?';
     return `${base}${separator}ticket=${encodeURIComponent(ticket)}`;
   };
 
-  if (relayUrl.startsWith('ws://') || relayUrl.startsWith('wss://')) {
-    return withTicket(relayUrl);
+  if (serverWsUrl.startsWith('ws://') || serverWsUrl.startsWith('wss://')) {
+    return withTicket(serverWsUrl);
   }
 
   if (typeof window === 'undefined') {
@@ -269,9 +269,9 @@ export function buildWsUrl(relayUrl: string, ticket: string): string {
 
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
 
-  if (relayUrl.startsWith('/')) {
-    return withTicket(`${scheme}://${window.location.host}${relayUrl}`);
+  if (serverWsUrl.startsWith('/')) {
+    return withTicket(`${scheme}://${window.location.host}${serverWsUrl}`);
   }
 
-  return withTicket(`${scheme}://${window.location.host}/${relayUrl.replace(/^\/+/, '')}`);
+  return withTicket(`${scheme}://${window.location.host}/${serverWsUrl.replace(/^\/+/, '')}`);
 }

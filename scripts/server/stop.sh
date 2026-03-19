@@ -6,8 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../lib/common.sh"
 
 mytermux_try_load_env || true
-SERVER_HOST="${SERVER_HOST:-${RELAY_HOST:-127.0.0.1}}"
-SERVER_PORT="${SERVER_PORT:-${RELAY_PORT:-62200}}"
+SERVER_HOST="${SERVER_HOST:-127.0.0.1}"
+SERVER_PORT="${SERVER_PORT:-62200}"
 
 echo "[server] 停止服务"
 cd "$MYTERMUX_ROOT_DIR"

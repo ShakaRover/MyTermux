@@ -7,7 +7,6 @@
  * - mytermux-server start -f   前台运行
  * - mytermux-server stop       停止中继服务器
  * - mytermux-server status     查看状态
- * - mytermux-relay *           兼容旧命令（会提示迁移）
  */
 
 import { Command } from 'commander';
@@ -38,18 +37,15 @@ const DEFAULT_PORT = 62200;
 /** 默认监听地址 */
 const DEFAULT_HOST = '127.0.0.1';
 
-/** 新旧 CLI 名称 */
+/** CLI 名称 */
 const PRIMARY_CLI_NAME = 'mytermux-server';
-const LEGACY_CLI_NAME = 'mytermux-relay';
-const INVOKED_CLI_NAME = path.basename(process.argv[1] || '');
-const IS_LEGACY_CLI = INVOKED_CLI_NAME === LEGACY_CLI_NAME;
 
 function resolveServerPortEnv(): string {
-  return process.env['SERVER_PORT'] || process.env['RELAY_PORT'] || process.env['PORT'] || String(DEFAULT_PORT);
+  return process.env['SERVER_PORT'] || process.env['PORT'] || String(DEFAULT_PORT);
 }
 
 function resolveServerHostEnv(): string {
-  return process.env['SERVER_HOST'] || process.env['RELAY_HOST'] || DEFAULT_HOST;
+  return process.env['SERVER_HOST'] || DEFAULT_HOST;
 }
 
 // ============================================================================
@@ -172,10 +168,6 @@ program
   .name(PRIMARY_CLI_NAME)
   .description('MyTermux Server - 控制端服务管理')
   .version('1.0.0');
-
-if (IS_LEGACY_CLI) {
-  console.warn(`[Server] 命令 "${LEGACY_CLI_NAME}" 已弃用，请改用 "${PRIMARY_CLI_NAME}"`);
-}
 
 /**
  * start 命令 - 启动中继服务器
